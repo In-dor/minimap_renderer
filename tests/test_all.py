@@ -49,14 +49,13 @@ from src.replay_parser import ReplayParser
         "replays/148.wowsreplay",
         "replays/149.wowsreplay",
         "replays/1410.wowsreplay",
+        "replays/1411.wowsreplay",
         "replays/languages.wowsreplay",
     ],
 )
 def test_all(file):
     with open(file, "rb") as f:
-        replay_info = ReplayParser(
-            f, strict=True, raw_data_output=False
-        ).get_info()
+        replay_info = ReplayParser(f, strict=True, raw_data_output=False).get_info()
 
         renderer = Renderer(
             replay_info["hidden"]["replay_data"],
