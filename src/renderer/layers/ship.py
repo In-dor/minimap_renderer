@@ -28,6 +28,13 @@ MIN_VIEW_DISTANCES = {
 }
 
 
+UNKNOWN_CONSUMABLE_INDEX_BY_ID: dict[int, str] = {
+    # 15.2 replay may emit aid=42 for submarine state consumable,
+    # while abilities.json has no id_to_index entry for 42.
+    42: "PCY042_SubmarineFourthState",
+}
+
+
 class LayerShipBase(LayerBase):
     """A class that handles/draws ships to the minimap.
 
@@ -74,6 +81,19 @@ class LayerShipBase(LayerBase):
         index = self._mapping_get(id_to_index, aid)
         if index is not None:
             return index
+
+        if known_unknown := UNKNOWN_CONSUMABLE_INDEX_BY_ID.get(aid):
+            return known_unknown
+
+        # Some replays report transient / internal consumable ids not present in
+        # abilities.json (e.g. submarine aid=42). In that case, try to map to a
+        # known consumable icon from the same ship by adjacent id.
+        if aid == 42:
+            for fallback_aid in (41, 37, 36, 35):
+                fallback = self._mapping_get(id_to_index, fallback_aid)
+                if fallback is not None:
+                    return fallback
+
         return self._mapping_get(clan, aid)
 
     def _get_max_dist(self):
