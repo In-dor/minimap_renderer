@@ -6,6 +6,7 @@ from renderer.const import RELATION_NORMAL_STR, COLORS_NORMAL
 from renderer.utils import (
     generate_holder,
     draw_health_bar,
+    LOGGER,
 )
 
 from PIL import Image, ImageDraw
@@ -46,9 +47,7 @@ class LayerShipBase(LayerBase):
             renderer (Renderer): The renderer.
         """
         self._renderer = renderer
-        self._replay_data = (
-            replay_data if replay_data else self._renderer.replay_data
-        )
+        self._replay_data = replay_data if replay_data else self._renderer.replay_data
         self._color = color
         self._holders = generate_holder(
             self._replay_data.player_info, renderer.resman, color
@@ -56,12 +55,26 @@ class LayerShipBase(LayerBase):
         self._abilities = renderer.resman.load_json("abilities.json")
         self._ships = renderer.resman.load_json("ships.json")
         self._consumable_cache: dict[int, Image.Image] = {}
+        self._unknown_consumables: set[tuple[int, int]] = set()
+        self._missing_consumable_icons: set[str] = set()
         self._owner = self._replay_data.player_info[self._replay_data.owner_id]
         self._owner_view_range = self._get_max_dist()
         self._deads: list[int] = []
-        self._image_dead = Image.new(
-            renderer.minimap_fg.mode, renderer.minimap_fg.size
-        )
+        self._image_dead = Image.new(renderer.minimap_fg.mode, renderer.minimap_fg.size)
+
+    @staticmethod
+    def _mapping_get(mapping: dict, aid: int):
+        return mapping.get(aid, mapping.get(str(aid)))
+
+    def _get_consumable_index(self, params_id: int, aid: int):
+        abilities = self._abilities.get(params_id, {})
+        id_to_index = abilities.get("id_to_index", {})
+        clan = self._abilities.get("clan", {})
+
+        index = self._mapping_get(id_to_index, aid)
+        if index is not None:
+            return index
+        return self._mapping_get(clan, aid)
 
     def _get_max_dist(self):
         ship = self._ships[self._owner.ship_params_id]
@@ -88,9 +101,9 @@ class LayerShipBase(LayerBase):
             modernizations["mb_range_modifiers"]
         ):
             for mod_id in mods:
-                max_dist *= modernizations["modernizations"][mod_id][
-                    "modifiers"
-                ]["GMMaxDist"]
+                max_dist *= modernizations["modernizations"][mod_id]["modifiers"][
+                    "GMMaxDist"
+                ]
         return max_dist
 
     def draw(self, game_time: int, image: Image.Image):
@@ -126,9 +139,7 @@ class LayerShipBase(LayerBase):
                 owner_vehicle.vehicle_id, None
             ):
                 if 1 in acs:
-                    owner_abilities = self._abilities[
-                        self._owner.ship_params_id
-                    ]
+                    owner_abilities = self._abilities[self._owner.ship_params_id]
                     index = owner_abilities["id_to_index"][1]
                     subtype = owner_abilities["id_to_subtype"][1]
                     owner_view_range *= owner_abilities[f"{index}.{subtype}"][
@@ -176,7 +187,12 @@ class LayerShipBase(LayerBase):
             x, y = self._renderer.get_scaled((vehicle.x, vehicle.y))
 
             if vehicle.is_alive and not self._renderer.dual_mode:
-                if not vehicle.is_visible or relation == 1 and not vehicle.visibility_flag and is_in_view_range:
+                if (
+                    not vehicle.is_visible
+                    or relation == 1
+                    and not vehicle.visibility_flag
+                    and is_in_view_range
+                ):
                     image.alpha_composite(
                         icon,
                         dest=(x - round(icon.width / 2), y - round(icon.height / 2)),
@@ -194,17 +210,13 @@ class LayerShipBase(LayerBase):
                         vx = 15
                         vy = 65
                         draw = ImageDraw.Draw(holder)
-                        draw.rectangle(
-                            ((vx, vy), (vx + 5, vy + 5)), fill="orange"
-                        )
+                        draw.rectangle(((vx, vy), (vx + 5, vy + 5)), fill="orange")
 
                     if is_in_view_range:
                         draw_health_bar(
                             holder,
                             color=color,
-                            hp_per=round(
-                                vehicle.health / player.max_health, 2
-                            ),
+                            hp_per=round(vehicle.health / player.max_health, 2),
                         )
 
                     side_points = [
@@ -284,9 +296,7 @@ class LayerShipBase(LayerBase):
             vehicle_id (int): The vehicle id.
             params_id (int): The vehicle's game params id.
         """
-        if ac := self._renderer.conman.active_consumables.get(
-            vehicle_id, None
-        ):
+        if ac := self._renderer.conman.active_consumables.get(vehicle_id, None):
             aid_hash = hash(tuple(ac))
 
             if c_image := self._consumable_cache.get(aid_hash, None):
@@ -297,17 +307,36 @@ class LayerShipBase(LayerBase):
                 x_pos = 0
 
                 for aid, _ in ac.items():
-                    abilities = self._abilities[params_id]
-                    try:
-                        index = abilities["id_to_index"][aid]
-                    except KeyError:
-                        index = self._abilities["clan"][aid]
+                    index = self._get_consumable_index(params_id, aid)
+                    if index is None:
+                        unknown = (params_id, aid)
+                        if unknown not in self._unknown_consumables:
+                            LOGGER.warning(
+                                "Unknown consumable ability id=%s for params_id=%s. Skipping icon.",
+                                aid,
+                                params_id,
+                            )
+                            self._unknown_consumables.add(unknown)
+                        continue
+
                     filename = f"consumable_{index}.png"
-                    c_image = self._renderer.resman.load_image(
-                        filename,
-                        path="consumables",
-                        size=(20, 20),
-                    )
+                    try:
+                        c_image = self._renderer.resman.load_image(
+                            filename,
+                            path="consumables",
+                            size=(20, 20),
+                        )
+                    except (FileNotFoundError, ModuleNotFoundError):
+                        if filename not in self._missing_consumable_icons:
+                            LOGGER.warning(
+                                "Missing consumable icon '%s' for aid=%s (params_id=%s).",
+                                filename,
+                                aid,
+                                params_id,
+                            )
+                            self._missing_consumable_icons.add(filename)
+                        continue
+
                     c_icons_holder.alpha_composite(c_image, (x_pos, 0))
                     x_pos += 20
 
@@ -360,7 +389,9 @@ class LayerShipBase(LayerBase):
             elif state == (True, True, False):
                 filename_parts.append(relation_str)
                 filename_parts.append("outside")
-            elif (state[0], state[1]) == (True, False) or (relation == 1 and is_alive and not visibility_flag):
+            elif (state[0], state[1]) == (True, False) or (
+                relation == 1 and is_alive and not visibility_flag
+            ):
                 filename_parts.append("hidden")
             else:
                 filename_parts.append(relation_str)
