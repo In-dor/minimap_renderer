@@ -9,7 +9,6 @@ from math import floor
 
 from .counter import X_POS as COUNTERS_POS
 
-
 CENTER = (800 + COUNTERS_POS) // 2
 SKILLS_ORDER = [
     "AirCarrier",
@@ -121,7 +120,15 @@ class LayerHealthBase(LayerBase):
             )
 
             if regen := ship.consumables_state.get(8, None):
-                _, count, _, _ = regen
+                try:
+                    if isinstance(regen, dict):
+                        count = regen.get("count", regen.get("quantity", 0))
+                    elif isinstance(regen, (tuple, list)):
+                        count = regen[1] if len(regen) > 1 else 0
+                    else:
+                        count = int(regen) if regen else 0
+                except Exception:
+                    count = 0
                 if count:
                     subtype = ability["id_to_subtype"].get(
                         str(8), ability["id_to_subtype"].get(8)
