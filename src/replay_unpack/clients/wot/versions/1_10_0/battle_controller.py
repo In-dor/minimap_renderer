@@ -21,7 +21,7 @@ class BattleController(IBattleController):
 
     @property
     def battle_logic(self):
-        return next(e for e in self._entities.values() if e.get_name() == 'BattleLogic')
+        return next((e for e in self._entities.values() if e.get_name() == 'BattleLogic'), None)
 
     def create_entity(self, entity: Entity):
         self._entities[entity.id] = entity

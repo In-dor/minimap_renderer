@@ -409,13 +409,14 @@ class BattleController(IBattleController):
         if not self._time_left:
             return None
 
+        if self.battle_logic is None:
+            return None
+
         try:
             # TODO: drop assumption that all caps have same property?
-            mission = self.battle_logic.properties["client"]["state"]["missions"][
-                "hold"
-            ][0]
+            mission = self.battle_logic.properties["client"]["state"]["missions"]["hold"][0]
             reward, period = mission["reward"], mission["period"]
-        except (TypeError, IndexError, KeyError):
+        except (TypeError, IndexError, KeyError, StopIteration):
             return None
 
         ally_tick, enemy_tick = 0, 0
@@ -825,7 +826,10 @@ class BattleController(IBattleController):
 
     @property
     def battle_logic(self):
-        return next(e for e in self._entities.values() if e.get_name() == "BattleLogic")
+        return next(
+            (e for e in self._entities.values() if e.get_name() == "BattleLogic"),
+            None,
+        )
 
     def create_entity(self, entity: Entity):
         self._entities[entity.id] = entity
@@ -934,9 +938,13 @@ class BattleController(IBattleController):
         return deaths
 
     def _getCapturePointsInfo(self):
+        if self.battle_logic is None:
+            return []
         return self.battle_logic.properties["client"]["state"].get("controlPoints", [])
 
     def _getTasksInfo(self):
+        if self.battle_logic is None:
+            return
         tasks = self.battle_logic.properties["client"]["state"].get("tasks", [])
         for task in tasks:
             yield {
