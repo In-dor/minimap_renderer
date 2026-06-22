@@ -24,7 +24,7 @@ ability_type_to_id = {'tacticalTrigger2': 46, 'callFighters': 21, 'smokePlane': 
                       'buffsShift': 31, 'invisibilityExtraBuffConsumable': 40, 'regenerateHealth': 22, 'rls': 12,
                       'subsOxygenRegen': 23, 'circleWave': 32, 'affectedBuffAura': 39, 'fighter': 9, 'crashCrew': 0,
                       'Any': 54, 'hangarBoosters': 5, 'Special': 56, 'speedBoosters': 3, 'sonar': 10,
-                      'subsWaveGunBoost': 24, 'tacticalTrigger6': 50, 'depthCharges': 26}
+                      'subsWaveGunBoost': 24, 'tacticalTrigger6': 50, 'depthCharges': 26, 'tacticalBuffGunBoost': 57, 'tacticalBuffAuxBoost': 58, 'tacticalBuffHeal': 59}
 
 
 # https://gist.github.com/wonderbeyond/d293e7a2af1de4873f2d757edd580288
