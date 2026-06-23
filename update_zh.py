@@ -94,6 +94,26 @@ def move_resources(wows_path):
 
     os.makedirs(target_res_dir, exist_ok=True)
 
+    # Copy ship bars
+    ship_bars_src = os.path.join(extract_root, 'gui', 'ship_bars')
+    ship_bars_dst = os.path.join('src', 'renderer', 'resources', 'ship_bars')
+    if os.path.exists(ship_bars_src):
+        if os.path.exists(ship_bars_dst):
+            for root, dirs, files in os.walk(ship_bars_src):
+                rel_path = os.path.relpath(root, ship_bars_src)
+                target_dir = os.path.join(ship_bars_dst, rel_path)
+                if not os.path.exists(target_dir):
+                    os.makedirs(target_dir)
+                for file in files:
+                    src_file = os.path.join(root, file)
+                    dst_file = os.path.join(target_dir, file)
+                    shutil.copy2(src_file, dst_file)
+        else:
+            shutil.copytree(ship_bars_src, ship_bars_dst)
+        logger.info(f'Copied ship bars to {ship_bars_dst}')
+    else:
+        logger.warning(f'Ship bars source not found: {ship_bars_src}')
+
     # 1. 移动 GameParams.data
     gp_src = os.path.join(extract_root, "content", "GameParams.data")
     if os.path.exists(gp_src):
@@ -192,20 +212,23 @@ def update_replay_unpack(wows_path, version_normalized):
         return
 
     last_version = versions[-1]
+    if last_version == version_normalized and len(versions) > 1:
+        last_version = versions[-2]
     logger.info(f"检测到上一版本为: {last_version}")
 
     if os.path.exists(new_version_path):
-        logger.warning(f"目标版本目录已存在: {new_version_path}，将覆盖/合并。")
+        logger.warning(f"目标版本目录已存在: {new_version_path}，将覆盖/合并")
     else:
         os.makedirs(new_version_path)
 
     # 复制上一版本的 Python 文件 (.py)
-    last_version_path = os.path.join(base_path, last_version)
-    for file in os.listdir(last_version_path):
-        if file.endswith(".py"):
-            src_file = os.path.join(last_version_path, file)
-            dst_file = os.path.join(new_version_path, file)
-            shutil.copy2(src_file, dst_file)
+    if last_version != version_normalized:
+        last_version_path = os.path.join(base_path, last_version)
+        for file in os.listdir(last_version_path):
+            if file.endswith(".py"):
+                src_file = os.path.join(last_version_path, file)
+                dst_file = os.path.join(new_version_path, file)
+                shutil.copy2(src_file, dst_file)
 
     # 复制提取的 scripts
     extract_scripts = os.path.join(wows_path, "res_extract", "scripts")
@@ -244,7 +267,7 @@ def run_generators():
         sys.exit(1)
 
 
-def update_renderer(version_normalized):
+def update_renderer(version_normalized, wows_path=None):
     """
     更新 src/renderer
     1. 创建新版本资源目录
@@ -287,8 +310,28 @@ def update_renderer(version_normalized):
         shutil.rmtree(renderer_spaces_dir)
 
     shutil.copytree(maps_spaces_dir, renderer_spaces_dir)
-    logger.info("全局 spaces 更新完成。")
+    logger.info("全局 spaces 更新完成")
 
+    extract_root = os.path.join(wows_path, "res_extract") if wows_path else "res_extract"
+    # Also need to get gui/ship_bars and update global resources
+    ship_bars_src = os.path.join(extract_root, "gui", "ship_bars")
+    ship_bars_dst = os.path.join("src", "renderer", "resources", "ship_bars")
+    
+    if os.path.exists(ship_bars_src):
+        if not os.path.exists(ship_bars_dst):
+            os.makedirs(ship_bars_dst)
+        for root, _, files in os.walk(ship_bars_src):
+            rel_path = os.path.relpath(root, ship_bars_src)
+            target_dir = os.path.join(ship_bars_dst, rel_path)
+            if not os.path.exists(target_dir):
+                os.makedirs(target_dir)
+            for file in files:
+                src_file = os.path.join(root, file)
+                dst_file = os.path.join(target_dir, file)
+                shutil.copy2(src_file, dst_file)
+        logger.info(f"Updated ship bars in {ship_bars_dst}")
+    else:
+        logger.warning(f"Ship bars source not found: {ship_bars_src}")
 
 def clean_up(wows_path):
     """
@@ -332,7 +375,7 @@ def main():
     update_maps(wows_path)
     update_replay_unpack(wows_path, version_normalized)
     run_generators()
-    update_renderer(version_normalized)
+    update_renderer(version_normalized, wows_path)
     clean_up(wows_path)
 
     logger.info("所有更新任务已完成！")

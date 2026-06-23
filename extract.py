@@ -45,7 +45,7 @@ def main(bin_num):
 
     texts_src = fr"{bin_path}\res\texts"
     texts_dest = fr"{OUTPUT_NAME}\texts"
-    shutil.copytree(texts_src, texts_dest)
+    shutil.copytree(texts_src, texts_dest, dirs_exist_ok=True)
 
     print("Extraction complete.")
 
