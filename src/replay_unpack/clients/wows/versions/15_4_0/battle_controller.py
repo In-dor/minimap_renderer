@@ -99,6 +99,7 @@ class BattleController(IBattleController):
         self._dict_building_info: dict[int, BuildingInfo] = {}
         self._dict_vehicle: dict[int, Vehicle] = {}
         self._dict_building: dict[int, Building] = {}
+        self._pending_building_updates: dict[int, dict] = {}
         self._dict_smoke: dict[int, Smoke] = {}
         self._dict_plane: dict[int, Plane] = {}
         self._dict_ward: dict[int, Ward] = {}
@@ -322,15 +323,93 @@ class BattleController(IBattleController):
             cur_yaw_speed,
         )
 
-    def _is_suppressed(self, entity: Entity, val):
-        self._dict_building[entity.id] = self._dict_building[entity.id]._replace(
-            is_suppressed=val
+    def _default_building(self, building_info: BuildingInfo):
+        return Building(
+            is_alive=building_info.is_alive,
+            is_suppressed=building_info.is_suppressed,
+            is_visible=False,
+            x=-2500,
+            y=-2500,
+            yaw=-180,
         )
 
-    def _is_alive(self, entity: Entity, val):
-        self._dict_building[entity.id] = self._dict_building[entity.id]._replace(
-            is_alive=val
+    def _building_relation(self, team_id: int):
+        if not self._owner or team_id == -1:
+            return -1
+
+        if team_id == self._owner["teamId"]:
+            return 0
+
+        return 1
+
+    def _register_building_entity(self, entity: Entity):
+        building_id = entity.id
+        props = entity.properties["client"]
+
+        building_info = BuildingInfo(
+            id=building_id,
+            is_alive=bool(props.get("isAlive", True)),
+            is_hidden=False,
+            is_suppressed=bool(props.get("isSuppressed", False)),
+            name=f"Building {building_id}",
+            params_id=props["paramsId"],
+            team_id=props.get("teamId", -1),
+            unique_id=building_id,
+            relation=self._building_relation(props.get("teamId", -1)),
+            ship_params_id=props["paramsId"],
         )
+
+        self._dict_building_info.setdefault(building_id, building_info)
+
+        building = self._dict_building.get(
+            building_id, self._default_building(building_info)
+        )
+        pending_updates = self._pending_building_updates.pop(building_id, None)
+        if pending_updates:
+            building = building._replace(**pending_updates)
+
+        self._dict_building[building_id] = building
+
+    def _refresh_building_relations(self):
+        if not self._owner:
+            return
+
+        for building_id, building_info in self._dict_building_info.items():
+            self._dict_building_info[building_id] = building_info._replace(
+                relation=self._building_relation(building_info.team_id)
+            )
+
+    def _get_or_create_building(self, building_id: int, source: str):
+        building = self._dict_building.get(building_id)
+        if building is not None:
+            return building
+
+        building_info = self._dict_building_info.get(building_id)
+        if building_info is None:
+            return None
+
+        building = self._default_building(building_info)
+        pending_updates = self._pending_building_updates.pop(building_id, None)
+        if pending_updates:
+            building = building._replace(**pending_updates)
+
+        self._dict_building[building_id] = building
+        return building
+
+    def _update_building(self, building_id: int, source: str, **updates):
+        building = self._get_or_create_building(building_id, source)
+        if building is None:
+            self._pending_building_updates.setdefault(building_id, {}).update(updates)
+            return False
+
+        self._dict_building[building_id] = building._replace(**updates)
+        return True
+
+    def _is_suppressed(self, entity: Entity, val):
+        self._update_building(entity.id, "_is_suppressed", is_suppressed=val)
+
+    def _is_alive(self, entity: Entity, val):
+        self._update_building(entity.id, "_is_alive", is_alive=val)
 
     def _on_chat_message(self, entity: Entity, player_id, namespace, message, unk):
         if player_id in [0, -1]:
@@ -663,22 +742,21 @@ class BattleController(IBattleController):
             x, y, yaw = map(round, (x, y, math.degrees(yaw)))
             is_visible = x != -2500 or y != -2500
 
-            if vehicle_id not in self._dict_building:
-                import logging
-
-                logging.error(
-                    f"Missing building vehicle_id: {vehicle_id} in _update_position"
-                )
-                continue
-
             if is_visible:
-                self._dict_building[vehicle_id] = self._dict_building[
-                    vehicle_id
-                ]._replace(x=x, y=y, yaw=yaw, is_visible=is_visible)
+                self._update_building(
+                    vehicle_id,
+                    "_update_position",
+                    x=x,
+                    y=y,
+                    yaw=yaw,
+                    is_visible=is_visible,
+                )
             else:
-                self._dict_building[vehicle_id] = self._dict_building[
-                    vehicle_id
-                ]._replace(is_visible=is_visible)
+                self._update_building(
+                    vehicle_id,
+                    "_update_position",
+                    is_visible=is_visible,
+                )
 
         for e in ships_minimap_diff:
             vehicle_id = e["vehicleID"]
@@ -795,18 +873,19 @@ class BattleController(IBattleController):
                     ship_params_id=player["paramsId"],
                 )
 
-                self._dict_building_info.setdefault(player["id"], bi)
+                building_id = player["id"]
+                self._dict_building_info[building_id] = bi
 
-                building = Building(
-                    is_alive=player["isAlive"],
-                    is_suppressed=player["isSuppressed"],
-                    is_visible=False,
-                    x=-2500,
-                    y=-2500,
-                    yaw=-180,
+                building = self._dict_building.get(
+                    building_id, self._default_building(bi)
                 )
+                pending_updates = self._pending_building_updates.pop(building_id, None)
+                if pending_updates:
+                    building = building._replace(**pending_updates)
 
-                self._dict_building.setdefault(player["id"], building)
+                self._dict_building[building_id] = building
+
+        self._refresh_building_relations()
 
     ###########################################################################
 
@@ -833,6 +912,9 @@ class BattleController(IBattleController):
 
     def create_entity(self, entity: Entity):
         self._entities[entity.id] = entity
+
+        if entity.get_name() == "Building":
+            self._register_building_entity(entity)
 
         if entity.get_name() == "SmokeScreen":
             radius = entity.properties["client"]["radius"]
