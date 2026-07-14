@@ -4,9 +4,21 @@ on:
   push:
     paths:
       - 'src/**'
+      - 'tests/**'
+      - 'setup.cfg'
+      - 'setup.py'
+      - 'pyproject.toml'
+      - 'tox.ini'
+      - '.github/workflows/tests.yml'
   pull_request:
     paths:
       - 'src/**'
+      - 'tests/**'
+      - 'setup.cfg'
+      - 'setup.py'
+      - 'pyproject.toml'
+      - 'tox.ini'
+      - '.github/workflows/tests.yml'
 
 jobs:
   test:

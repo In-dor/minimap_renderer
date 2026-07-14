@@ -1,65 +1,195 @@
-## Minimap Renderer
+<div align="center">
 
-![Tests](https://github.com/WoWs-Builder-Team/minimap_renderer/actions/workflows/tests.yml/badge.svg)
+# Minimap Renderer
 
-Minimap Renderer parses World of Warships replays to create a timelapse video that resembles the in-game minimap.
+**将《战舰世界》回放转换为清晰、流畅的小地图战斗视频**
 
-![enter image description here](images/minimap.gif)
+[English](README_EN.md) · [问题反馈](https://github.com/In-dor/minimap_renderer/issues) · [原始项目](https://github.com/WoWs-Builder-Team/minimap_renderer)
 
-Try it on in [Google Colab](https://colab.research.google.com/drive/1OyomQe5pHaDDozpt0rs9JMg54No8QMjE?usp=sharing)
+[![Tests](https://github.com/In-dor/minimap_renderer/actions/workflows/tests.yml/badge.svg)](https://github.com/In-dor/minimap_renderer/actions/workflows/tests.yml)
+[![Python 3.10](https://img.shields.io/badge/Python-3.10-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-2E7D32.svg)](LICENSE)
+[![Maintained](https://img.shields.io/badge/状态-持续维护-00A86B.svg)](https://github.com/In-dor/minimap_renderer)
 
-### Installation
+![Minimap Renderer 演示](images/minimap.gif)
 
-1. Install Python 3.10
-2. Create a Python virtual environment and activate it.
-   - Linux
-     ```
-     python3.10 -m venv venv && . venv/bin/activate
-     ```
-   - Windows
-     ```
-     py -3.10 -m venv venv && venv\Scripts\activate.bat
-     ```
-   - You should now see `(venv)` at the start of the command prompt.
-3. Install the renderer package. To install the renderer package use this command.
-   ```
-   pip install --upgrade --force-reinstall git+https://github.com/In-dor/minimap_renderer.git
-   ```
-4. You're all set.
+</div>
 
-### Usage
+> [!IMPORTANT]
+> [WoWs-Builder-Team/minimap_renderer](https://github.com/WoWs-Builder-Team/minimap_renderer) 已归档，不再维护。当前持续维护的版本是 **[In-dor/minimap_renderer](https://github.com/In-dor/minimap_renderer)**。请在本仓库安装、提交问题和获取更新。
 
-Replays can be rendered with `render` module. The full usage is:
+## 功能亮点
 
+- **原生高分辨率绘制**：直接在 `1920x1200` 目标画布上渲染，不依赖后期放大，文字和图标更加清晰。
+- **原生时间插值**：对舰船位置、航向、飞机、炮弹和鱼雷生成中间状态，默认输出流畅的 `60 FPS` 视频。
+- **完整战斗信息**：显示舰船、血量、消耗品、占领点、比分、伤害、勋带、击杀、聊天和战斗结果。
+- **高效渲染流水线**：缓存不变图层，并行执行绘制、帧序列化与 FFmpeg 编码。
+- **兼容多种补帧方式**：除推荐的 `native` 外，仍可使用 `blend`、`duplicate` 和 `motion`。
+- **自动导出配置信息**：渲染视频时同时生成玩家配装链接 JSON 文件。
+
+## 快速开始
+
+### 环境要求
+
+- Python `3.10`
+- Windows 或 Linux
+- 有效的《战舰世界》`.wowsreplay` 回放文件
+
+项目通过 `imageio-ffmpeg` 提供视频编码能力，正常安装后通常不需要单独配置 FFmpeg。
+
+### Windows
+
+```bat
+py -3.10 -m venv .venv
+.venv\Scripts\activate
+python -m pip install --upgrade pip
+pip install --upgrade --force-reinstall git+https://github.com/In-dor/minimap_renderer.git
 ```
-python -m render --replay <replay_path> [--fps 60] [--speed 15] [--resolution 1920x1200] [--quality 8] [--interpolation native]
+
+### Linux
+
+```bash
+python3.10 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install --upgrade --force-reinstall git+https://github.com/In-dor/minimap_renderer.git
 ```
 
-This will create a `.mp4` file from your replay file.
+## 使用方法
 
-`--fps` controls output smoothness independently from `--speed`, which controls
-the timelapse playback rate. The default `native` mode renders intermediate
-object states directly and avoids whole-frame blending. `blend`, `motion`, and
-`duplicate` remain available as FFmpeg post-processing alternatives. Resolution
-is rendered directly and must preserve the layout aspect ratio (`1360:850` when
-logs are enabled).
+使用默认配置渲染一场回放：
 
-Since the renderer is installed to a virtual environment, you need to activate it once before you render. Once activated, you can render any replay file as long as it is a valid replay file.
+```bash
+python -m render --replay "路径/到/回放文件.wowsreplay"
+```
 
-### License
+Windows 示例：
 
-This project is licensed under the GNU AGPLv3 License.
+```bat
+python -m render --replay "F:\Replays\20260713_165525_PRSB510-Slava_54_Faroe.wowsreplay"
+```
 
-### Credits and Links
+默认配置为 `1920x1200`、`60 FPS`、`15x` 速度、质量 `8` 和原生插值。生成文件位于回放文件旁边：
 
-<img src="https://resources.jetbrains.com/storage/products/company/brand/logos/jb_beam.png" alt="JetBrains Logo (Main) logo." height="200">
+```text
+回放文件.mp4
+回放文件-builds.json
+```
 
-- This project is supported by [Jetbrains](https://www.jetbrains.com/) through their [Open Source Support](https://jb.gg/OpenSourceSupport) program.
+查看完整命令帮助：
 
-- This project is maintained by `@notyourfather#7816` and `@Trackpad#1234`.
+```bash
+python -m render --help
+```
 
-- However, it would not have been possible without Monstrofil's [replays_unpack](https://github.com/Monstrofil/replays_unpack)!
+## 命令参数
 
-- A minimal Discord bot wrapper is available [here](https://github.com/WoWs-Builder-Team/minimap_renderer_bot).
+```text
+python -m render --replay REPLAY
+                 [--fps FPS]
+                 [--speed SPEED]
+                 [--resolution WIDTHxHEIGHT]
+                 [--quality 1-10]
+                 [--interpolation {native,blend,motion,duplicate}]
+```
 
-- One with additional features is available [here](https://github.com/padtrack/track).
+| 参数 | 默认值 | 说明 |
+| --- | ---: | --- |
+| `--replay` | 必填 | `.wowsreplay` 文件路径 |
+| `--fps` | `60` | 输出视频帧率；数值越高越流畅，渲染帧数也越多 |
+| `--speed` | `15` | 延时播放倍速；例如 `15` 表示约 15 倍速 |
+| `--resolution` | `1920x1200` | 原生渲染分辨率，必须保持 `1360:850`（即 `8:5`）布局比例 |
+| `--quality` | `8` | 编码质量，范围 `1-10`；数值越高，画质和文件体积通常越高 |
+| `--interpolation` | `native` | 帧生成方式，见下表 |
+
+### 插值模式
+
+| 模式 | 特点 | 建议用途 |
+| --- | --- | --- |
+| `native` | 在渲染器中计算物体中间状态；移动清晰，无整帧混合重影 | **默认推荐** |
+| `blend` | FFmpeg 混合相邻帧；速度较快，但移动物体可能出现重影 | 兼容旧输出风格 |
+| `duplicate` | 复制源帧达到目标帧率；最快，但运动不够连贯 | 更看重速度时 |
+| `motion` | FFmpeg 运动补偿；计算成本很高，复杂场景可能产生伪影 | 实验性用途 |
+
+`native` 模式要求 `--fps` 不低于 `--speed`。例如 `--fps 60 --speed 15` 每个源时间间隔通常会生成约四个输出帧。
+
+## 推荐配置
+
+平衡清晰度、流畅度和速度：
+
+```bash
+python -m render --replay "battle.wowsreplay" \
+  --fps 60 \
+  --speed 15 \
+  --resolution 1920x1200 \
+  --quality 8 \
+  --interpolation native
+```
+
+更快、更小的输出：
+
+```bash
+python -m render --replay "battle.wowsreplay" \
+  --fps 30 \
+  --speed 15 \
+  --resolution 1360x850 \
+  --quality 7 \
+  --interpolation native
+```
+
+## 性能参考
+
+以下数据来自同一场 15.5 版本回放，配置为 `1920x1200 / 60 FPS / 15x / quality 8 / native`：
+
+| 项目 | 优化前 | 当前版本 |
+| --- | ---: | ---: |
+| 正常战斗帧吞吐 | `55.85 FPS` | `118.89 FPS` |
+| 完整命令耗时 | `50.18 秒` | `24.17 秒` |
+| 相对速度 | `1.00x` | **约 `2.08x`** |
+
+实际速度取决于 CPU、内存带宽、回放长度、战斗复杂度和后台负载。当前流水线主要利用多个阶段并行工作，而有状态的战斗图层仍按时间顺序绘制，以保证结果正确。
+
+## 兼容性说明
+
+渲染器包含多个游戏版本的适配图层。新游戏版本可能修改回放数据结构，因此无法保证尚未适配的版本能够立即解析或完整显示。
+
+遇到问题时，请提交 [Issue](https://github.com/In-dor/minimap_renderer/issues)，并附上：
+
+- 游戏版本和服务器区域
+- 完整错误日志
+- 实际使用的命令
+- 可用于复现问题的回放文件（如方便提供）
+
+## 从源码开发
+
+```bash
+git clone https://github.com/In-dor/minimap_renderer.git
+cd minimap_renderer
+python -m venv .venv
+```
+
+Windows：
+
+```bat
+.venv\Scripts\activate
+pip install -e ".[testing]"
+pytest
+```
+
+Linux：
+
+```bash
+source .venv/bin/activate
+pip install -e ".[testing]"
+pytest
+```
+
+## 项目沿革与致谢
+
+本仓库复刻自已归档的 [WoWs-Builder-Team/minimap_renderer](https://github.com/WoWs-Builder-Team/minimap_renderer)，并在其基础上继续适配游戏版本、修复问题和改进渲染质量与性能。
+
+感谢原项目维护者 `notyourfather`、`Trackpad` 及所有历史贡献者。回放解析相关工作也离不开 Monstrofil 的 [replays_unpack](https://github.com/Monstrofil/replays_unpack)。
+
+## 许可证
+
+本项目基于 [GNU Affero General Public License v3.0](LICENSE) 发布。

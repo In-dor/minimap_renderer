@@ -1,4 +1,5 @@
 from PIL import Image, ImageDraw
+from math import ceil, floor
 from renderer.base import LayerBase
 from renderer.render import Renderer
 from typing import Optional
@@ -24,6 +25,8 @@ class LayerSmokeBase(LayerBase):
         self._replay_data = (
             replay_data if replay_data else self._renderer.replay_data
         )
+        self._cached_smokes = None
+        self._cached_overlay = None
 
     def draw(self, game_time: int, image: Image.Image):
         """Draws the smokes to the minimap.
@@ -33,21 +36,51 @@ class LayerSmokeBase(LayerBase):
             image (Image.Image): Image to paste the smokes to.
         """
         events = self._replay_data.events
-        smokes = events[game_time].evt_smoke.values()
+        evt_smoke = events[game_time].evt_smoke
+        smokes = evt_smoke.values()
 
         if not smokes:
             return
 
-        assert self._renderer.minimap_fg
-        base = Image.new("RGBA", self._renderer.minimap_fg.size)
-        draw = ImageDraw.Draw(base, mode="RGBA")
+        if evt_smoke is self._cached_smokes:
+            overlay, position = self._cached_overlay
+            image.alpha_composite(overlay, position)
+            return
 
+        assert self._renderer.minimap_fg
+        circles = []
         for smoke in smokes:
+            r = self._renderer.get_scaled_r(smoke.radius)
             for point in smoke.points:
                 x, y = self._renderer.get_scaled(point)
-                r = self._renderer.get_scaled_r(smoke.radius)
-                draw.ellipse(
-                    [(x - r, y - r), (x + r, y + r)], fill="#ffffff40"
-                )
+                circles.append((x, y, r))
 
-        image.alpha_composite(base)
+        if not circles:
+            return
+
+        left = max(0, floor(min(x - r for x, _, r in circles)))
+        top = max(0, floor(min(y - r for _, y, r in circles)))
+        right = min(
+            image.width, ceil(max(x + r for x, _, r in circles)) + 1
+        )
+        bottom = min(
+            image.height, ceil(max(y + r for _, y, r in circles)) + 1
+        )
+        if right <= left or bottom <= top:
+            return
+        base = Image.new("RGBA", (right - left, bottom - top))
+        draw = ImageDraw.Draw(base, mode="RGBA")
+
+        for x, y, r in circles:
+            draw.ellipse(
+                [
+                    (x - r - left, y - r - top),
+                    (x + r - left, y + r - top),
+                ],
+                fill="#ffffff40",
+            )
+
+        position = (left, top)
+        self._cached_smokes = evt_smoke
+        self._cached_overlay = (base, position)
+        image.alpha_composite(base, position)

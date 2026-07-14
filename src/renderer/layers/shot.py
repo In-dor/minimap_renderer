@@ -1,4 +1,5 @@
 from typing import Optional
+from math import ceil, floor
 from renderer.base import LayerBase
 from renderer.const import COLORS_NORMAL
 from ..data import ReplayData
@@ -67,9 +68,6 @@ class LayerShotBase(LayerBase):
         if not events[game_time].evt_shot and not self._projectiles:
             return
 
-        base = Image.new("RGBA", image.size)
-        draw = ImageDraw.Draw(base)
-
         for shot in events[game_time].evt_shot:
             result = getEquidistantPoints(
                 flip_y(shot.origin),
@@ -120,6 +118,30 @@ class LayerShotBase(LayerBase):
         projectiles.sort(
             key=lambda o: self._projectiles_data[o[1]], reverse=True
         )
+
+        if not projectiles:
+            return
+
+        line_width = max(1, self._renderer.px(2))
+        padding = line_width + 1
+        left = max(
+            0, floor(min(min(p[2], p[4]) for p in projectiles)) - padding
+        )
+        top = max(
+            0, floor(min(min(p[3], p[5]) for p in projectiles)) - padding
+        )
+        right = min(
+            image.width,
+            ceil(max(max(p[2], p[4]) for p in projectiles)) + padding + 1,
+        )
+        bottom = min(
+            image.height,
+            ceil(max(max(p[3], p[5]) for p in projectiles)) + padding + 1,
+        )
+        if right <= left or bottom <= top:
+            return
+        base = Image.new("RGBA", (right - left, bottom - top))
+        draw = ImageDraw.Draw(base)
 
         for projectile in projectiles:
             try:
@@ -172,11 +194,11 @@ class LayerShotBase(LayerBase):
                     color = tuple(color)
 
                 draw.line(
-                    [(cx, cy), (px, py)],
+                    [(cx - left, cy - top), (px - left, py - top)],
                     fill=color,
-                    width=max(1, self._renderer.px(2)),
+                    width=line_width,
                 )
             except KeyError:
                 pass
 
-        image.alpha_composite(base)
+        image.alpha_composite(base, (left, top))

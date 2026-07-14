@@ -1,7 +1,7 @@
 from typing import Optional
 import numpy as np
 
-from renderer.data import Plane, ReplayData
+from renderer.data import ReplayData
 from renderer.render import Renderer
 from renderer.base import LayerBase
 from renderer.const import RELATION_NORMAL_STR
@@ -55,39 +55,49 @@ class LayerPlaneBase(LayerBase):
                 continue
 
             x, y = self._renderer.get_scaled(plane.position)
-            icon = self._get_plane_icon(plane)
+            icon = self._get_plane_icon(
+                plane.owner_id,
+                plane.params_id,
+                plane.purpose,
+                plane.relation,
+            )
             m1 = round(icon.width / 2)
             m2 = round(icon.height / 2)
             image.alpha_composite(icon, (x - m1, y - m2))
 
     @lru_cache
-    def _get_plane_icon(self, plane: Plane) -> Image.Image:
+    def _get_plane_icon(
+        self, owner_id: int, params_id: int, purpose: int, plane_relation: int
+    ) -> Image.Image:
         """Loads the plane icon from the resources.
 
         Args:
-            plane (Plane): Plane data.
+            owner_id (int): Owner vehicle id.
+            params_id (int): Plane resource id.
+            purpose (int): Plane role.
+            plane_relation (int): Relation to the replay owner.
 
         Returns:
             Image.Image: The image of the plane.
         """
         try:
-            player = self._vehicle_id_to_player[plane.owner_id]
+            player = self._vehicle_id_to_player[owner_id]
             try:
                 upgrade = 22 in player.skills.AirCarrier
             except IndexError:
                 upgrade = False
         except KeyError:
             upgrade = False
-        ptype, ammo = self._planes[plane.params_id]
+        ptype, ammo = self._planes[params_id]
 
         if self._color:
             relation = "ally" if self._color == "green" else "enemy"
         else:
-            relation = RELATION_NORMAL_STR[plane.relation]
+            relation = RELATION_NORMAL_STR[plane_relation]
 
         icon_res = f"plane_icons.{relation}"
 
-        if plane.purpose in [0, 1]:
+        if purpose in [0, 1]:
             if ptype == "Dive":
                 filename = f"Dive_{ammo}.png"
                 icon = self._renderer.resman.load_image(
@@ -98,11 +108,11 @@ class LayerPlaneBase(LayerBase):
                 icon = self._renderer.resman.load_image(
                     filename, path=icon_res
                 )
-        elif plane.purpose in [2, 3]:
-            relation = "ally" if plane.relation == -1 else relation
+        elif purpose in [2, 3]:
+            relation = "ally" if plane_relation == -1 else relation
             icon_res = f"plane_icons.{relation}"
 
-            if plane.purpose == 2 and upgrade:
+            if purpose == 2 and upgrade:
                 icon = self._renderer.resman.load_image(
                     "Cap_upgrade.png", path=icon_res
                 )
@@ -111,7 +121,7 @@ class LayerPlaneBase(LayerBase):
                     "Cap.png", path=icon_res
                 )
         else:
-            if plane.purpose == 6:
+            if purpose == 6:
                 filename = f"Airstrike_{ammo}.png"
                 icon = self._renderer.resman.load_image(
                     filename, path=icon_res
@@ -122,7 +132,7 @@ class LayerPlaneBase(LayerBase):
                     filename, path=icon_res
                 )
 
-        if plane.purpose == 1:
+        if purpose == 1:
             icon_px = np.array(icon)
             icon_px[icon_px[:, :, 3] == 255, 3] = 64
             icon = Image.fromarray(icon_px, mode="RGBA")

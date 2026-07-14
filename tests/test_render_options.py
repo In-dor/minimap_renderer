@@ -3,7 +3,7 @@ from unittest.mock import patch
 import pytest
 from PIL import Image
 
-from renderer.render import RenderDual, RendererBase
+from renderer.render import AsyncFrameWriter, RenderDual, RendererBase
 
 
 def make_renderer():
@@ -32,6 +32,7 @@ def test_writer_encodes_directly_at_render_resolution(write_frames):
     kwargs = write_frames.call_args.kwargs
     assert kwargs["fps"] == 60
     assert kwargs["size"] == (1920, 1200)
+    assert kwargs["pix_fmt_in"] == "rgb24"
     assert "-vf" not in kwargs["output_params"]
 
 
@@ -82,7 +83,9 @@ def test_writer_keeps_legacy_behavior_without_speed(write_frames):
 
 def test_resolution_configures_native_canvas_scale():
     renderer = make_renderer()
-    renderer.resman = type("Resources", (), {"set_render_scale": lambda _, scale: None})()
+    renderer.resman = type(
+        "Resources", (), {"set_render_scale": lambda _, scale: None}
+    )()
 
     renderer._configure_resolution((1920, 1200))
 
@@ -93,7 +96,9 @@ def test_resolution_configures_native_canvas_scale():
 
 def test_resolution_rejects_non_native_aspect_ratio():
     renderer = make_renderer()
-    renderer.resman = type("Resources", (), {"set_render_scale": lambda _, scale: None})()
+    renderer.resman = type(
+        "Resources", (), {"set_render_scale": lambda _, scale: None}
+    )()
 
     with pytest.raises(ValueError, match="aspect ratio"):
         renderer._configure_resolution((1920, 1080))
@@ -128,3 +133,60 @@ def test_writer_rejects_invalid_video_options(option, value):
 
     with pytest.raises(ValueError):
         renderer.get_writer("output.mp4", **options)
+
+
+def test_async_writer_preserves_frame_order_and_closes():
+    received = []
+
+    class Writer:
+        def send(self, frame):
+            received.append(frame)
+
+        def close(self):
+            received.append("closed")
+
+    writer = AsyncFrameWriter(Writer(), queue_size=1)
+    writer.send(None)
+    writer.send(b"first")
+    writer.send(b"second")
+    writer.close()
+
+    assert received == [None, b"first", b"second", "closed"]
+
+
+def test_async_writer_propagates_worker_errors():
+    class Writer:
+        def send(self, frame):
+            if frame is not None:
+                raise OSError("write failed")
+
+        def close(self):
+            pass
+
+    writer = AsyncFrameWriter(Writer(), queue_size=1)
+    writer.send(None)
+    writer.send(b"frame")
+
+    with pytest.raises(OSError, match="write failed"):
+        writer.close()
+
+
+def test_async_writer_snapshots_images_before_enqueue():
+    received = []
+
+    class Writer:
+        def send(self, frame):
+            if frame is not None:
+                received.append(frame)
+
+        def close(self):
+            pass
+
+    image = Image.new("RGBA", (1, 1), (10, 20, 30, 255))
+    writer = AsyncFrameWriter(Writer(), queue_size=1)
+    writer.send(None)
+    writer.send_image(image)
+    image.putpixel((0, 0), (200, 210, 220, 255))
+    writer.close()
+
+    assert received == [bytes((10, 20, 30))]

@@ -1,5 +1,7 @@
 from json import JSONDecodeError
 from math import ceil
+from queue import Full, Queue
+from threading import Thread
 from typing import Any, Callable, Optional, Type, Union
 from importlib import import_module
 from renderer.base import LayerBase
@@ -18,6 +20,79 @@ from tqdm import tqdm
 
 Number = Union[int, float]
 INTERPOLATION_MODES = ("native", "blend", "motion", "duplicate")
+_WRITER_STOP = object()
+
+
+class AsyncFrameWriter:
+    def __init__(self, writer, queue_size: int = 2):
+        self._writer = writer
+        self._queue = Queue(maxsize=queue_size)
+        self._error = None
+        self._started = False
+        self._closed = False
+        self._thread = Thread(
+            target=self._run, name="ffmpeg-writer", daemon=True
+        )
+
+    def _run(self):
+        try:
+            self._writer.send(None)
+            while True:
+                frame = self._queue.get()
+                if frame is _WRITER_STOP:
+                    break
+                if isinstance(frame, Image.Image):
+                    frame = frame.tobytes("raw", "RGB")
+                self._writer.send(frame)
+        except BaseException as error:
+            self._error = error
+        finally:
+            try:
+                self._writer.close()
+            except BaseException as error:
+                if self._error is None:
+                    self._error = error
+
+    def _raise_if_failed(self):
+        if self._error is not None:
+            raise self._error
+
+    def _put(self, value):
+        while True:
+            self._raise_if_failed()
+            try:
+                self._queue.put(value, timeout=0.1)
+                return
+            except Full:
+                continue
+
+    def send(self, frame):
+        if self._closed:
+            raise RuntimeError("cannot write to a closed video writer")
+        if frame is None:
+            if not self._started:
+                self._started = True
+                self._thread.start()
+            return
+        if not self._started:
+            raise RuntimeError(
+                "video writer must be initialized with send(None)"
+            )
+        self._put(frame)
+
+    def send_image(self, image: Image.Image):
+        self.send(image.copy())
+
+    def close(self):
+        if self._closed:
+            return
+        self._closed = True
+        if not self._started:
+            self._started = True
+            self._thread.start()
+        self._put(_WRITER_STOP)
+        self._thread.join()
+        self._raise_if_failed()
 
 
 class RendererBase:
@@ -55,7 +130,8 @@ class RendererBase:
             raise ValueError("resolution dimensions must be greater than 0")
         if target_size[0] * base_size[1] != target_size[1] * base_size[0]:
             raise ValueError(
-                f"resolution must preserve the native {base_size[0]}:{base_size[1]} aspect ratio"
+                "resolution must preserve the native "
+                f"{base_size[0]}:{base_size[1]} aspect ratio"
             )
         self.render_scale = target_size[0] / base_size[0]
         self.output_size = target_size
@@ -79,7 +155,8 @@ class RendererBase:
             raise ValueError("resolution dimensions must be greater than 0")
         if interpolation not in INTERPOLATION_MODES:
             raise ValueError(
-                f"interpolation must be one of: {', '.join(INTERPOLATION_MODES)}"
+                "interpolation must be one of: "
+                f"{', '.join(INTERPOLATION_MODES)}"
             )
 
         output_params = [
@@ -98,7 +175,8 @@ class RendererBase:
         if interpolation != "native" and speed is not None and fps > speed:
             if interpolation == "motion":
                 filters.append(
-                    f"minterpolate=fps={fps}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir"
+                    f"minterpolate=fps={fps}:mi_mode=mci:"
+                    "mc_mode=aobmc:me_mode=bidir"
                 )
             elif interpolation == "blend":
                 filters.append(f"framerate=fps={fps}")
@@ -108,20 +186,34 @@ class RendererBase:
             filters.append(f"fps={fps}")
 
         if resolution is not None and self.minimap_bg.size != resolution:
-            raise ValueError("render canvas does not match the requested resolution")
+            raise ValueError(
+                "render canvas does not match the requested resolution"
+            )
 
         if filters:
             output_params.extend(["-vf", ",".join(filters)])
 
-        return write_frames(
-            path=path,
-            fps=input_fps,
-            quality=quality,
-            pix_fmt_in="rgba",
-            macro_block_size=2,
-            size=self.minimap_bg.size,
-            output_params=output_params,
+        return AsyncFrameWriter(
+            write_frames(
+                path=path,
+                fps=input_fps,
+                quality=quality,
+                pix_fmt_in="rgb24",
+                macro_block_size=2,
+                size=self.minimap_bg.size,
+                output_params=output_params,
+            )
         )
+
+    @staticmethod
+    def _frame_bytes(image: Image.Image):
+        return image.tobytes("raw", "RGB")
+
+    def _write_frame(self, writer, image: Image.Image):
+        if isinstance(writer, AsyncFrameWriter):
+            writer.send_image(image)
+        else:
+            writer.send(self._frame_bytes(image))
 
     def _load_map(self):
         """Loads the map.
@@ -270,7 +362,9 @@ class RenderDual(RendererBase):
         interpolation: str = "blend",
     ):
         if interpolation == "native":
-            raise ValueError("native interpolation is not supported for dual renders")
+            raise ValueError(
+                "native interpolation is not supported for dual renders"
+            )
         self._configure_resolution(resolution)
         self._load_map()
 
@@ -369,7 +463,7 @@ class RenderDual(RendererBase):
             self.conman.tick()
 
             minimap_bg.paste(minimap_img, self.map_origin)
-            video_writer.send(minimap_bg.tobytes())
+            self._write_frame(video_writer, minimap_bg)
         video_writer.close()
 
 
@@ -450,7 +544,9 @@ class Renderer(RendererBase):
         self._check_if_operations()
         self._configure_resolution(resolution)
         if interpolation == "native" and speed is not None and fps < speed:
-            raise ValueError("native interpolation requires fps to be at least speed")
+            raise ValueError(
+                "native interpolation requires fps to be at least speed"
+            )
         self._load_map()
 
         assert self.minimap_fg
@@ -520,6 +616,36 @@ class Renderer(RendererBase):
 
             return minimap_img, minimap_bg
 
+        def draw_interval_base(game_time):
+            minimap_img = self.minimap_fg.copy()
+            minimap_bg = self.minimap_bg.copy()
+
+            if not self.is_operations:
+                layer_capture.draw(game_time, minimap_img)
+                layer_score.draw(game_time, minimap_bg)
+
+            layer_building.draw(game_time, minimap_img)
+            layer_ward.draw(game_time, minimap_img)
+            layer_timer.draw(game_time, minimap_bg)
+
+            if self.logs:
+                layer_health.draw(game_time, minimap_bg)
+                layer_counter.draw(game_time, minimap_bg)
+                layer_frag.draw(game_time, minimap_bg)
+                layer_ribbon.draw(game_time, minimap_bg)
+                if self.enable_chat:
+                    layer_chat.draw(game_time, minimap_bg)
+
+            return minimap_img, minimap_bg
+
+        def draw_dynamic(game_time, minimap_img):
+            layer_markers.draw(game_time, minimap_img)
+            layer_shot.draw(game_time, minimap_img)
+            layer_torpedo.draw(game_time, ImageDraw.Draw(minimap_img))
+            layer_ship.draw(game_time, minimap_img)
+            layer_smoke.draw(game_time, minimap_img)
+            layer_plane.draw(game_time, minimap_img)
+
         if interpolation == "native":
             source_speed = speed if speed is not None else fps
             self.frame_delta = source_speed / fps
@@ -527,40 +653,53 @@ class Renderer(RendererBase):
             normal_frame_count = max(
                 0, ceil((len(event_keys) - 1) * fps / source_speed)
             )
-            prog = tqdm(timeline, total=normal_frame_count) if self.use_tqdm else timeline
-            has_active_interval = False
-
-            for frame_index, current_key, next_key, alpha, first in prog:
-                update_progress(frame_index, normal_frame_count + 1)
-                if first:
-                    if has_active_interval:
-                        self.conman.tick()
-                    self.conman.update(current_key)
-                    has_active_interval = True
-
-                sample_key = ("native", frame_index)
-                self.replay_data.events[sample_key] = interpolate_events(
-                    self.replay_data.events[current_key],
-                    self.replay_data.events[next_key],
-                    alpha,
-                    include_transients=first,
-                )
-                try:
-                    minimap_img, minimap_bg = draw_frame(sample_key)
-                    minimap_bg.paste(minimap_img, self.map_origin)
-                    video_writer.send(minimap_bg.tobytes())
-                finally:
-                    self.replay_data.events.pop(sample_key)
-
-            if has_active_interval:
-                self.conman.tick()
-            self.conman.update(last_key)
-            update_progress(normal_frame_count, normal_frame_count + 1)
-            minimap_img, minimap_bg = draw_frame(last_key)
-            self._write_ending(
-                video_writer, minimap_img, minimap_bg, fps
+            prog = (
+                tqdm(timeline, total=normal_frame_count)
+                if self.use_tqdm
+                else timeline
             )
-            video_writer.close()
+            has_active_interval = False
+            interval_map = None
+            interval_output = None
+
+            try:
+                for frame_index, current_key, next_key, alpha, first in prog:
+                    update_progress(frame_index, normal_frame_count + 1)
+                    if first:
+                        if has_active_interval:
+                            self.conman.tick()
+                        self.conman.update(current_key)
+                        has_active_interval = True
+
+                    sample_key = ("native", frame_index)
+                    self.replay_data.events[sample_key] = interpolate_events(
+                        self.replay_data.events[current_key],
+                        self.replay_data.events[next_key],
+                        alpha,
+                        include_transients=first,
+                    )
+                    try:
+                        if first:
+                            interval_map, interval_output = draw_interval_base(
+                                sample_key
+                            )
+                        minimap_img = interval_map.copy()
+                        draw_dynamic(sample_key, minimap_img)
+                        interval_output.paste(minimap_img, self.map_origin)
+                        self._write_frame(video_writer, interval_output)
+                    finally:
+                        self.replay_data.events.pop(sample_key)
+
+                if has_active_interval:
+                    self.conman.tick()
+                self.conman.update(last_key)
+                update_progress(normal_frame_count, normal_frame_count + 1)
+                minimap_img, minimap_bg = draw_frame(last_key)
+                self._write_ending(
+                    video_writer, minimap_img, minimap_bg, fps
+                )
+            finally:
+                video_writer.close()
             return
 
         prog = tqdm(event_keys) if self.use_tqdm else event_keys
@@ -580,10 +719,12 @@ class Renderer(RendererBase):
                 )
             else:
                 minimap_bg.paste(minimap_img, self.map_origin)
-                video_writer.send(minimap_bg.tobytes())
+                self._write_frame(video_writer, minimap_bg)
         video_writer.close()
 
-    def _write_ending(self, video_writer, minimap_img, minimap_bg, timeline_fps):
+    def _write_ending(
+        self, video_writer, minimap_img, minimap_bg, timeline_fps
+    ):
         img_win = Image.new("RGBA", self.minimap_fg.size)
         font = self.resman.load_font("warhelios_bold.ttf", size=48)
         player = self.replay_data.player_info[self.replay_data.owner_id]
@@ -602,8 +743,12 @@ class Renderer(RendererBase):
         px, py = mid_x - tw, mid_y - th - self.px(6)
         end_frame_count = round(3 * timeline_fps)
         fade_frame_count = 1.5 * timeline_fps
+        opaque_frame = None
         for i in range(end_frame_count):
             per = min(1, i / fade_frame_count)
+            if per == 1 and opaque_frame is not None:
+                video_writer.send(opaque_frame)
+                continue
             frame_overlay = img_win.copy()
             frame_draw = ImageDraw.Draw(frame_overlay)
             frame_draw.text(
@@ -617,7 +762,12 @@ class Renderer(RendererBase):
             frame = Image.alpha_composite(minimap_img, frame_overlay)
             output = minimap_bg.copy()
             output.paste(frame, self.map_origin)
-            video_writer.send(output.tobytes())
+            frame_bytes = self._frame_bytes(output) if per == 1 else None
+            if per == 1:
+                opaque_frame = frame_bytes
+                video_writer.send(frame_bytes)
+            else:
+                self._write_frame(video_writer, output)
 
     def _draw_header(self, image: Image.Image):
         draw = ImageDraw.Draw(image)
@@ -631,7 +781,7 @@ class Renderer(RendererBase):
         font_large = self.resman.load_font("warhelios_bold.ttf", size=16)
         draw.text(
             self.xy((945, 75)),
-            "https://github.com/WoWs-Builder-Team",
+            "https://github.com/In-dor/minimap_renderer",
             "white",
             font_large,
         )
