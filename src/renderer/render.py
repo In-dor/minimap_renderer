@@ -1,6 +1,8 @@
 from json import JSONDecodeError
+from functools import lru_cache
 from math import ceil
 from queue import Full, Queue
+import subprocess
 from threading import Thread
 from typing import Any, Callable, Optional, Type, Union
 from importlib import import_module
@@ -15,12 +17,161 @@ from renderer.exceptions import MapLoadError
 from renderer.shipbuilder import ShipBuilder
 from renderer.temporal import interpolate_events, native_timeline
 from PIL import Image, ImageDraw
-from imageio_ffmpeg import write_frames
+from imageio_ffmpeg import get_ffmpeg_exe, write_frames
 from tqdm import tqdm
 
 Number = Union[int, float]
 INTERPOLATION_MODES = ("native", "blend", "motion", "duplicate")
+ENCODER_MODES = ("auto", "cpu", "nvenc", "qsv", "amf")
+VIDEO_CODECS = ("h264", "h265", "av1")
+CPU_ENCODERS = {
+    "h264": "libx264",
+    "h265": "libx265",
+    "av1": "libaom-av1",
+}
+HARDWARE_ENCODERS = {
+    "nvenc": {
+        "label": "NVIDIA NVENC",
+        "h264": "h264_nvenc",
+        "h265": "hevc_nvenc",
+        "av1": "av1_nvenc",
+    },
+    "qsv": {
+        "label": "Intel Quick Sync",
+        "h264": "h264_qsv",
+        "h265": "hevc_qsv",
+        "av1": "av1_qsv",
+    },
+    "amf": {
+        "label": "AMD AMF",
+        "h264": "h264_amf",
+        "h265": "hevc_amf",
+        "av1": "av1_amf",
+    },
+}
 _WRITER_STOP = object()
+
+
+def _encoder_params(
+    codec: str, video_codec: str, quality: int
+) -> list[str]:
+    qp = max(1, round((10 - quality) * 5.1))
+    if codec == "libx264":
+        return []
+    if codec == "libx265":
+        return ["-preset", "medium", "-crf", str(qp)]
+    if codec == "libaom-av1":
+        av1_crf = max(0, round((10 - quality) * 6.3))
+        return [
+            "-strict", "-2", "-cpu-used", "6", "-row-mt", "1",
+            "-crf", str(av1_crf), "-b:v", "0",
+        ]
+    if codec.endswith("_nvenc"):
+        return [
+            "-preset", "medium", "-rc", "vbr", "-cq", str(qp),
+            "-b:v", "0",
+        ]
+    if codec.endswith("_qsv"):
+        return ["-preset", "medium", "-global_quality", str(qp)]
+    return [
+        "-quality", "quality", "-rc", "cqp", "-qp_i", str(qp),
+        "-qp_p", str(qp),
+    ]
+
+
+def _codec_output_params(video_codec: str) -> list[str]:
+    if video_codec == "h264":
+        return ["-profile:v", "high"]
+    if video_codec == "h265":
+        return ["-profile:v", "main", "-tag:v", "hvc1"]
+    return ["-tag:v", "av01"]
+
+
+@lru_cache(maxsize=None)
+def _probe_video_encoder(
+    codec: str, video_codec: str, size: tuple[int, int]
+) -> bool:
+    command = [
+        get_ffmpeg_exe(),
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "rgb24",
+        "-s",
+        f"{size[0]}x{size[1]}",
+        "-r",
+        "1",
+        "-i",
+        "pipe:0",
+        "-frames:v",
+        "1",
+        "-an",
+        "-c:v",
+        codec,
+        "-pix_fmt",
+        "yuv420p",
+        *_codec_output_params(video_codec),
+        *_encoder_params(codec, video_codec, 8),
+        "-f",
+        "null",
+        "-",
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            input=bytes(size[0] * size[1] * 3),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
+
+def select_video_encoder(
+    encoder: str,
+    video_codec: str = "h264",
+    size: tuple[int, int] = (1920, 1200),
+) -> tuple[str, str]:
+    if encoder not in ENCODER_MODES:
+        raise ValueError(
+            "encoder must be one of: " f"{', '.join(ENCODER_MODES)}"
+        )
+    if video_codec not in VIDEO_CODECS:
+        raise ValueError(
+            "codec must be one of: " f"{', '.join(VIDEO_CODECS)}"
+        )
+
+    candidates = HARDWARE_ENCODERS if encoder == "auto" else (
+        () if encoder == "cpu" else (encoder,)
+    )
+    for candidate in candidates:
+        config = HARDWARE_ENCODERS[candidate]
+        codec = config[video_codec]
+        label = config["label"]
+        if _probe_video_encoder(codec, video_codec, size):
+            return codec, f"{label} ({codec})"
+
+    if encoder in ("auto", "cpu"):
+        codec = CPU_ENCODERS[video_codec]
+        if _probe_video_encoder(codec, video_codec, size):
+            label = "CPU fallback" if encoder == "auto" else "CPU"
+            return codec, f"{label} ({codec})"
+        raise RuntimeError(
+            f"no usable {video_codec.upper()} encoder is available in FFmpeg"
+        )
+    config = HARDWARE_ENCODERS[encoder]
+    codec = config[video_codec]
+    label = config["label"]
+    raise RuntimeError(
+        f"{label} {video_codec.upper()} encoder ({codec}) is not available; "
+        "check the GPU device and driver, or use --encoder auto"
+    )
 
 
 class AsyncFrameWriter:
@@ -146,6 +297,8 @@ class RendererBase:
         speed: Optional[float] = None,
         resolution: Optional[tuple[int, int]] = None,
         interpolation: str = "blend",
+        encoder: str = "auto",
+        video_codec: str = "h264",
     ):
         if fps <= 0:
             raise ValueError("fps must be greater than 0")
@@ -158,15 +311,26 @@ class RendererBase:
                 "interpolation must be one of: "
                 f"{', '.join(INTERPOLATION_MODES)}"
             )
+        codec, encoder_label = select_video_encoder(
+            encoder, video_codec, self.minimap_bg.size
+        )
+        LOGGER.info(
+            f"Using {video_codec.upper()} video encoder: {encoder_label}"
+        )
 
         output_params = [
-            "-profile:v",
-            "high",
             "-movflags",
             "+faststart",
-            "-tune",
-            "animation",
+            *_codec_output_params(video_codec),
         ]
+        if codec == "libx264":
+            output_params.extend(["-tune", "animation"])
+            encoder_quality = quality
+        else:
+            output_params.extend(
+                _encoder_params(codec, video_codec, quality)
+            )
+            encoder_quality = None
         filters = []
         input_fps = fps if interpolation == "native" else (
             speed if speed is not None else fps
@@ -197,7 +361,8 @@ class RendererBase:
             write_frames(
                 path=path,
                 fps=input_fps,
-                quality=quality,
+                quality=encoder_quality,
+                codec=codec,
                 pix_fmt_in="rgb24",
                 macro_block_size=2,
                 size=self.minimap_bg.size,
@@ -360,6 +525,8 @@ class RenderDual(RendererBase):
         speed: Optional[float] = None,
         resolution: Optional[tuple[int, int]] = None,
         interpolation: str = "blend",
+        encoder: str = "auto",
+        video_codec: str = "h264",
     ):
         if interpolation == "native":
             raise ValueError(
@@ -409,7 +576,8 @@ class RenderDual(RendererBase):
         )
 
         video_writer = self.get_writer(
-            path, fps, quality, speed, resolution, interpolation
+            path, fps, quality, speed, resolution, interpolation, encoder,
+            video_codec,
         )
         video_writer.send(None)
 
@@ -539,6 +707,8 @@ class Renderer(RendererBase):
         speed: Optional[float] = None,
         resolution: Optional[tuple[int, int]] = None,
         interpolation: str = "native",
+        encoder: str = "auto",
+        video_codec: str = "h264",
     ):
         """Starts the rendering process"""
         self._check_if_operations()
@@ -570,7 +740,8 @@ class Renderer(RendererBase):
         layer_markers = self._load_layer("LayerMarkers")(self)
 
         video_writer = self.get_writer(
-            path, fps, quality, speed, resolution, interpolation
+            path, fps, quality, speed, resolution, interpolation, encoder,
+            video_codec,
         )
         video_writer.send(None)
 

@@ -91,25 +91,41 @@ python -m render --replay REPLAY
                  [--resolution WIDTHxHEIGHT]
                  [--quality 1-10]
                  [--interpolation {native,blend,motion,duplicate}]
+                 [--codec {h264,h265,av1}]
+                 [--encoder {auto,cpu,nvenc,qsv,amf}]
 ```
 
-| Option | Default | Description |
-| --- | ---: | --- |
-| `--replay` | required | Path to the `.wowsreplay` file |
-| `--fps` | `60` | Output frame rate; higher values produce smoother video and more rendered frames |
-| `--speed` | `15` | Timelapse playback multiplier; `15` means approximately 15x speed |
-| `--resolution` | `1920x1200` | Native render resolution; it must preserve the `1360:850` (`8:5`) layout ratio |
-| `--quality` | `8` | Encoding quality from `1-10`; higher values generally increase quality and file size |
-| `--interpolation` | `native` | Frame generation mode, described below |
+| Option            |     Default | Description                                                                                                                |
+| ----------------- | ----------: | -------------------------------------------------------------------------------------------------------------------------- |
+| `--replay`        |    required | Path to the `.wowsreplay` file                                                                                             |
+| `--fps`           |        `60` | Output frame rate; higher values produce smoother video and more rendered frames                                           |
+| `--speed`         |        `15` | Timelapse playback multiplier; `15` means approximately 15x speed                                                          |
+| `--resolution`    | `1920x1200` | Native render resolution; it must preserve the `1360:850` (`8:5`) layout ratio                                             |
+| `--quality`       |         `8` | Encoding quality from `1-10`; higher values generally increase quality and file size                                       |
+| `--interpolation` |    `native` | Frame generation mode, described below                                                                                     |
+| `--codec`         |      `h264` | Video format: broadly compatible `h264`, more efficient `h265`, or `av1`                                                   |
+| `--encoder`       |      `auto` | Probes available hardware encoders and falls back to CPU; `cpu`, `nvenc`, `qsv`, and `amf` can also be selected explicitly |
+
+### Video Encoders
+
+`--codec` selects the video format, while `--encoder` selects CPU or a hardware backend. For the selected format, `auto` performs a real encoding test with NVIDIA NVENC, Intel Quick Sync, and AMD AMF in that order instead of merely checking whether FFmpeg lists an encoder. It falls back to the corresponding CPU encoder when the hardware or driver is unavailable, and logs the result.
+
+| Format | CPU fallback | Characteristics                                                                       |
+| ------ | ------------ | ------------------------------------------------------------------------------------- |
+| `h264` | `libx264`    | Best player and browser compatibility; recommended default                            |
+| `h265` | `libx265`    | Usually smaller at similar quality, but unsupported by some browsers                  |
+| `av1`  | `libaom-av1` | High compression efficiency; CPU encoding is slow and playback support must be recent |
+
+When an encoder such as `--encoder qsv` is selected explicitly, initialization failure for that format is reported instead of silently switching devices. Intel-based NAS systems normally use `--encoder qsv`; Docker and LXC deployments must also expose `/dev/dri` to the container and install the Intel media driver. Hardware encoding primarily reduces CPU load during compression; Python/Pillow layer rendering remains CPU-bound.
 
 ### Interpolation Modes
 
-| Mode | Behavior | Recommended use |
-| --- | --- | --- |
-| `native` | Interpolates object states in the renderer; motion stays sharp without whole-frame blending | **Recommended default** |
-| `blend` | Uses FFmpeg to blend adjacent frames; fast, but moving objects may show ghosting | Compatibility with older output |
-| `duplicate` | Repeats source frames to reach the output rate; fastest, but motion is less fluid | Maximum speed |
-| `motion` | Uses FFmpeg motion compensation; very expensive and may create artifacts in complex scenes | Experimental use |
+| Mode        | Behavior                                                                                    | Recommended use                 |
+| ----------- | ------------------------------------------------------------------------------------------- | ------------------------------- |
+| `native`    | Interpolates object states in the renderer; motion stays sharp without whole-frame blending | **Recommended default**         |
+| `blend`     | Uses FFmpeg to blend adjacent frames; fast, but moving objects may show ghosting            | Compatibility with older output |
+| `duplicate` | Repeats source frames to reach the output rate; fastest, but motion is less fluid           | Maximum speed                   |
+| `motion`    | Uses FFmpeg motion compensation; very expensive and may create artifacts in complex scenes  | Experimental use                |
 
 In `native` mode, `--fps` must not be lower than `--speed`. With `--fps 60 --speed 15`, each source interval usually produces about four output frames.
 
@@ -123,7 +139,9 @@ python -m render --replay "battle.wowsreplay" \
   --speed 15 \
   --resolution 1920x1200 \
   --quality 8 \
-  --interpolation native
+  --interpolation native \
+  --codec h264 \
+  --encoder auto
 ```
 
 Faster and smaller output:
@@ -134,18 +152,20 @@ python -m render --replay "battle.wowsreplay" \
   --speed 15 \
   --resolution 1360x850 \
   --quality 7 \
-  --interpolation native
+  --interpolation native \
+  --codec h265 \
+  --encoder auto
 ```
 
 ## Performance Reference
 
 The following results use the same game 15.5 replay at `1920x1200 / 60 FPS / 15x / quality 8 / native`:
 
-| Metric | Before optimization | Current version |
-| --- | ---: | ---: |
-| Normal battle-frame throughput | `55.85 FPS` | `118.89 FPS` |
-| Full command time | `50.18 s` | `24.17 s` |
-| Relative speed | `1.00x` | **about `2.08x`** |
+| Metric                         | Before optimization |   Current version |
+| ------------------------------ | ------------------: | ----------------: |
+| Normal battle-frame throughput |         `55.85 FPS` |      `118.89 FPS` |
+| Full command time              |           `50.18 s` |         `24.17 s` |
+| Relative speed                 |             `1.00x` | **about `2.08x`** |
 
 Actual performance depends on CPU speed, memory bandwidth, replay length, battle complexity, and background load. The current pipeline overlaps independent stages while preserving strict ordering for stateful battle layers.
 

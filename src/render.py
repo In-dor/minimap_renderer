@@ -1,7 +1,12 @@
 import argparse
 import json
 from pathlib import Path
-from renderer.render import INTERPOLATION_MODES, Renderer
+from renderer.render import (
+    ENCODER_MODES,
+    INTERPOLATION_MODES,
+    VIDEO_CODECS,
+    Renderer,
+)
 from replay_parser import ReplayParser
 from renderer.utils import LOGGER
 
@@ -54,6 +59,19 @@ if __name__ == "__main__":
         default="native",
         help="frame interpolation mode (default: native)",
     )
+    parser.add_argument(
+        "--codec",
+        choices=VIDEO_CODECS,
+        default="h264",
+        help="video codec (default: h264)",
+    )
+    parser.add_argument(
+        "--encoder",
+        choices=ENCODER_MODES,
+        default="auto",
+        help="video encoder; auto probes hardware and falls back to CPU "
+        "(default: auto)",
+    )
     namespace = parser.parse_args()
     if namespace.fps <= 0:
         parser.error("--fps must be greater than 0")
@@ -66,7 +84,10 @@ if __name__ == "__main__":
         replay_info = ReplayParser(
             f, strict=True, raw_data_output=False
         ).get_info()
-        LOGGER.info(f"Replay has version {replay_info['open']['clientVersionFromExe']}")
+        LOGGER.info(
+            "Replay has version "
+            f"{replay_info['open']['clientVersionFromExe']}"
+        )
         LOGGER.info("Rendering the replay file...")
         renderer = Renderer(
             replay_info["hidden"]["replay_data"],
@@ -83,6 +104,8 @@ if __name__ == "__main__":
             resolution=namespace.resolution,
             quality=namespace.quality,
             interpolation=namespace.interpolation,
+            encoder=namespace.encoder,
+            video_codec=namespace.codec,
         )
         LOGGER.info(f"The video file is at: {str(video_path)}")
         LOGGER.info("Done.")
