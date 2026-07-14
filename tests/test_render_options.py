@@ -25,8 +25,35 @@ def test_writer_separates_frame_rate_speed_and_resolution(write_frames):
     assert kwargs["fps"] == 15
     assert kwargs["size"] == (1360, 850)
     filter_value = kwargs["output_params"][kwargs["output_params"].index("-vf") + 1]
-    assert "minterpolate=fps=60" in filter_value
+    assert "framerate=fps=60" in filter_value
     assert "scale=1920:1200:flags=lanczos" in filter_value
+
+
+@patch("renderer.render.write_frames")
+@pytest.mark.parametrize(
+    ("interpolation", "expected_filter"),
+    [
+        ("blend", "framerate=fps=60"),
+        ("motion", "minterpolate=fps=60"),
+        ("duplicate", "fps=60"),
+    ],
+)
+def test_writer_supports_interpolation_modes(
+    write_frames, interpolation, expected_filter
+):
+    renderer = make_renderer()
+
+    renderer.get_writer(
+        "output.mp4",
+        fps=60,
+        quality=8,
+        speed=15,
+        interpolation=interpolation,
+    )
+
+    kwargs = write_frames.call_args.kwargs
+    filter_value = kwargs["output_params"][kwargs["output_params"].index("-vf") + 1]
+    assert expected_filter in filter_value
 
 
 @patch("renderer.render.write_frames")
@@ -42,7 +69,12 @@ def test_writer_keeps_legacy_behavior_without_speed(write_frames):
 
 @pytest.mark.parametrize(
     ("option", "value"),
-    [("fps", 0), ("speed", 0), ("resolution", (1920, 0))],
+    [
+        ("fps", 0),
+        ("speed", 0),
+        ("resolution", (1920, 0)),
+        ("interpolation", "invalid"),
+    ],
 )
 def test_writer_rejects_invalid_video_options(option, value):
     renderer = make_renderer()
@@ -51,6 +83,7 @@ def test_writer_rejects_invalid_video_options(option, value):
         "quality": 8,
         "speed": 15,
         "resolution": (1920, 1200),
+        "interpolation": "blend",
     }
     options[option] = value
 

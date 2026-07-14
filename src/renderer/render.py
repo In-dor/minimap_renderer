@@ -15,6 +15,7 @@ from imageio_ffmpeg import write_frames
 from tqdm import tqdm
 
 Number = Union[int, float]
+INTERPOLATION_MODES = ("blend", "motion", "duplicate")
 
 
 class RendererBase:
@@ -41,6 +42,7 @@ class RendererBase:
         quality: int,
         speed: Optional[float] = None,
         resolution: Optional[tuple[int, int]] = None,
+        interpolation: str = "blend",
     ):
         if fps <= 0:
             raise ValueError("fps must be greater than 0")
@@ -48,6 +50,10 @@ class RendererBase:
             raise ValueError("speed must be greater than 0")
         if resolution is not None and any(value <= 0 for value in resolution):
             raise ValueError("resolution dimensions must be greater than 0")
+        if interpolation not in INTERPOLATION_MODES:
+            raise ValueError(
+                f"interpolation must be one of: {', '.join(INTERPOLATION_MODES)}"
+            )
 
         m_block = 10
 
@@ -67,9 +73,14 @@ class RendererBase:
         input_fps = speed if speed is not None else fps
 
         if speed is not None and fps > speed:
-            filters.append(
-                f"minterpolate=fps={fps}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir"
-            )
+            if interpolation == "motion":
+                filters.append(
+                    f"minterpolate=fps={fps}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir"
+                )
+            elif interpolation == "blend":
+                filters.append(f"framerate=fps={fps}")
+            else:
+                filters.append(f"fps={fps}")
         elif speed is not None and fps < speed:
             filters.append(f"fps={fps}")
 
@@ -237,6 +248,7 @@ class RenderDual(RendererBase):
         progress_cb: Optional[Callable[[float], Any]] = None,
         speed: Optional[float] = None,
         resolution: Optional[tuple[int, int]] = None,
+        interpolation: str = "blend",
     ):
         self._load_map()
 
@@ -280,7 +292,9 @@ class RenderDual(RendererBase):
             self, self.replay_r, "red"
         )
 
-        video_writer = self.get_writer(path, fps, quality, speed, resolution)
+        video_writer = self.get_writer(
+            path, fps, quality, speed, resolution, interpolation
+        )
         video_writer.send(None)
 
         shared_events = sorted(
@@ -408,6 +422,7 @@ class Renderer(RendererBase):
         progress_cb: Optional[Callable[[float], Any]] = None,
         speed: Optional[float] = None,
         resolution: Optional[tuple[int, int]] = None,
+        interpolation: str = "blend",
     ):
         """Starts the rendering process"""
         self._check_if_operations()
@@ -433,7 +448,9 @@ class Renderer(RendererBase):
         layer_chat = self._load_layer("LayerChat")(self)
         layer_markers = self._load_layer("LayerMarkers")(self)
 
-        video_writer = self.get_writer(path, fps, quality, speed, resolution)
+        video_writer = self.get_writer(
+            path, fps, quality, speed, resolution, interpolation
+        )
         video_writer.send(None)
 
         self._draw_header(self.minimap_bg)

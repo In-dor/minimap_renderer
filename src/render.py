@@ -1,7 +1,7 @@
 import argparse
 import json
 from pathlib import Path
-from renderer.render import Renderer
+from renderer.render import INTERPOLATION_MODES, Renderer
 from replay_parser import ReplayParser
 from renderer.utils import LOGGER
 
@@ -48,6 +48,12 @@ if __name__ == "__main__":
         metavar="1-10",
         help="encoding quality (default: 8)",
     )
+    parser.add_argument(
+        "--interpolation",
+        choices=INTERPOLATION_MODES,
+        default="blend",
+        help="frame interpolation mode (default: blend)",
+    )
     namespace = parser.parse_args()
     if namespace.fps <= 0:
         parser.error("--fps must be greater than 0")
@@ -76,6 +82,7 @@ if __name__ == "__main__":
             speed=namespace.speed,
             resolution=namespace.resolution,
             quality=namespace.quality,
+            interpolation=namespace.interpolation,
         )
         LOGGER.info(f"The video file is at: {str(video_path)}")
         LOGGER.info("Done.")
