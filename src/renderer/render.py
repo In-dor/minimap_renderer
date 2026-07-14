@@ -34,28 +34,60 @@ class RendererBase:
         self.resman = ResourceManager(self.replay_data.game_version)
         self.conman = ConsumableManager([self.replay_data])
 
-    def get_writer(self, path: str, fps: int, quality: int):
+    def get_writer(
+        self,
+        path: str,
+        fps: int,
+        quality: int,
+        speed: Optional[float] = None,
+        resolution: Optional[tuple[int, int]] = None,
+    ):
+        if fps <= 0:
+            raise ValueError("fps must be greater than 0")
+        if speed is not None and speed <= 0:
+            raise ValueError("speed must be greater than 0")
+        if resolution is not None and any(value <= 0 for value in resolution):
+            raise ValueError("resolution dimensions must be greater than 0")
+
         m_block = 10
 
         if hasattr(self, "logs"):
             if self.logs:
                 m_block = 17
 
+        output_params = [
+            "-profile:v",
+            "high",
+            "-movflags",
+            "+faststart",
+            "-tune",
+            "animation",
+        ]
+        filters = []
+        input_fps = speed if speed is not None else fps
+
+        if speed is not None and fps > speed:
+            filters.append(
+                f"minterpolate=fps={fps}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir"
+            )
+        elif speed is not None and fps < speed:
+            filters.append(f"fps={fps}")
+
+        if resolution is not None:
+            width, height = resolution
+            filters.append(f"scale={width}:{height}:flags=lanczos")
+
+        if filters:
+            output_params.extend(["-vf", ",".join(filters)])
+
         return write_frames(
             path=path,
-            fps=fps,
+            fps=input_fps,
             quality=quality,
             pix_fmt_in="rgba",
             macro_block_size=m_block,
             size=self.minimap_bg.size,
-            output_params=[
-                "-profile:v",
-                "high",
-                "-movflags",
-                "+faststart",
-                "-tune",
-                "animation",
-            ],
+            output_params=output_params,
         )
 
     def _load_map(self):
@@ -203,6 +235,8 @@ class RenderDual(RendererBase):
         fps: int = 20,
         quality: int = 7,
         progress_cb: Optional[Callable[[float], Any]] = None,
+        speed: Optional[float] = None,
+        resolution: Optional[tuple[int, int]] = None,
     ):
         self._load_map()
 
@@ -246,17 +280,16 @@ class RenderDual(RendererBase):
             self, self.replay_r, "red"
         )
 
-        video_writer = self.get_writer(path, fps, quality)
+        video_writer = self.get_writer(path, fps, quality, speed, resolution)
         video_writer.send(None)
 
+        shared_events = sorted(
+            set(self.replay_data.events).intersection(self.replay_r.events)
+        )
         if self.use_tqdm:
-            prog = tqdm(
-                set(self.replay_data.events).intersection(self.replay_r.events)
-            )
+            prog = tqdm(shared_events)
         else:
-            prog = set(self.replay_data.events).intersection(
-                self.replay_r.events
-            )
+            prog = shared_events
 
         total = len(prog)
         last_per = 0.0
@@ -373,6 +406,8 @@ class Renderer(RendererBase):
         fps: int = 20,
         quality: int = 7,
         progress_cb: Optional[Callable[[float], Any]] = None,
+        speed: Optional[float] = None,
+        resolution: Optional[tuple[int, int]] = None,
     ):
         """Starts the rendering process"""
         self._check_if_operations()
@@ -398,7 +433,7 @@ class Renderer(RendererBase):
         layer_chat = self._load_layer("LayerChat")(self)
         layer_markers = self._load_layer("LayerMarkers")(self)
 
-        video_writer = self.get_writer(path, fps, quality)
+        video_writer = self.get_writer(path, fps, quality, speed, resolution)
         video_writer.send(None)
 
         self._draw_header(self.minimap_bg)
@@ -473,8 +508,11 @@ class Renderer(RendererBase):
                 offset_y = 6
                 px, py = mid_x - tw, mid_y - th - offset_y
 
-                for i in range(3 * fps):
-                    per = min(1, i / (1.5 * fps))
+                timeline_fps = speed if speed is not None else fps
+                end_frame_count = round(3 * timeline_fps)
+                fade_frame_count = 1.5 * timeline_fps
+                for i in range(end_frame_count):
+                    per = min(1, i / fade_frame_count)
                     drw_win.text(
                         (px, py),
                         text=text,
