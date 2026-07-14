@@ -1,4 +1,5 @@
 from json import JSONDecodeError
+from math import ceil
 from typing import Any, Callable, Optional, Type, Union
 from importlib import import_module
 from renderer.base import LayerBase
@@ -10,12 +11,13 @@ from renderer.resman import ResourceManager
 from renderer.conman import ConsumableManager
 from renderer.exceptions import MapLoadError
 from renderer.shipbuilder import ShipBuilder
+from renderer.temporal import interpolate_events, native_timeline
 from PIL import Image, ImageDraw
 from imageio_ffmpeg import write_frames
 from tqdm import tqdm
 
 Number = Union[int, float]
-INTERPOLATION_MODES = ("blend", "motion", "duplicate")
+INTERPOLATION_MODES = ("native", "blend", "motion", "duplicate")
 
 
 class RendererBase:
@@ -34,6 +36,31 @@ class RendererBase:
         self.replay_data: ReplayData = replay_data
         self.resman = ResourceManager(self.replay_data.game_version)
         self.conman = ConsumableManager([self.replay_data])
+        self.render_scale = 1.0
+        self.frame_delta = 1.0
+        self.map_origin = (40, 90)
+
+    def px(self, value: Number) -> int:
+        return round(value * self.render_scale)
+
+    def xy(self, xy: tuple[Number, Number]) -> tuple[int, int]:
+        return self.px(xy[0]), self.px(xy[1])
+
+    def _configure_resolution(
+        self, resolution: Optional[tuple[int, int]]
+    ) -> None:
+        base_size = (1360, 850) if getattr(self, "logs", False) else (800, 850)
+        target_size = resolution or base_size
+        if any(value <= 0 for value in target_size):
+            raise ValueError("resolution dimensions must be greater than 0")
+        if target_size[0] * base_size[1] != target_size[1] * base_size[0]:
+            raise ValueError(
+                f"resolution must preserve the native {base_size[0]}:{base_size[1]} aspect ratio"
+            )
+        self.render_scale = target_size[0] / base_size[0]
+        self.output_size = target_size
+        self.map_origin = self.xy((40, 90))
+        self.resman.set_render_scale(self.render_scale)
 
     def get_writer(
         self,
@@ -55,12 +82,6 @@ class RendererBase:
                 f"interpolation must be one of: {', '.join(INTERPOLATION_MODES)}"
             )
 
-        m_block = 10
-
-        if hasattr(self, "logs"):
-            if self.logs:
-                m_block = 17
-
         output_params = [
             "-profile:v",
             "high",
@@ -70,9 +91,11 @@ class RendererBase:
             "animation",
         ]
         filters = []
-        input_fps = speed if speed is not None else fps
+        input_fps = fps if interpolation == "native" else (
+            speed if speed is not None else fps
+        )
 
-        if speed is not None and fps > speed:
+        if interpolation != "native" and speed is not None and fps > speed:
             if interpolation == "motion":
                 filters.append(
                     f"minterpolate=fps={fps}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir"
@@ -81,12 +104,11 @@ class RendererBase:
                 filters.append(f"framerate=fps={fps}")
             else:
                 filters.append(f"fps={fps}")
-        elif speed is not None and fps < speed:
+        elif interpolation != "native" and speed is not None and fps < speed:
             filters.append(f"fps={fps}")
 
-        if resolution is not None:
-            width, height = resolution
-            filters.append(f"scale={width}:{height}:flags=lanczos")
+        if resolution is not None and self.minimap_bg.size != resolution:
+            raise ValueError("render canvas does not match the requested resolution")
 
         if filters:
             output_params.extend(["-vf", ",".join(filters)])
@@ -96,7 +118,7 @@ class RendererBase:
             fps=input_fps,
             quality=quality,
             pix_fmt_in="rgba",
-            macro_block_size=m_block,
+            macro_block_size=2,
             size=self.minimap_bg.size,
             output_params=output_params,
         )
@@ -120,24 +142,23 @@ class RendererBase:
             map_legends = self.resman.load_image("minimap_grid_legends.png")
             map_land = self.resman.load_image("minimap.png", path=path)
             map_water = self.resman.load_image("minimap_water.png", path=path)
-            size = (800, 850)
-
-            if hasattr(self, "logs"):
-                if self.logs:
-                    size = (1360, 850)
+            size = self.output_size
 
             self.minimap_bg = map_water.copy().resize(size)
             self.minimap_bg.paste(
                 map_legends,
                 (
                     0,
-                    50,
+                    self.px(50),
                 ),
                 mask=map_legends,
             )
 
             self.bg_color = map_water.getpixel((10, 10))
-            map_water = Image.alpha_composite(map_water, draw_grid())
+            map_water = Image.alpha_composite(
+                map_water,
+                draw_grid(self.minimap_size, max(1, self.px(1))),
+            )
             self.minimap_fg = Image.alpha_composite(map_water, map_land)
         except (FileNotFoundError, ModuleNotFoundError) as e:
             raise MapLoadError from e
@@ -161,16 +182,14 @@ class RendererBase:
             manifest = self.resman.load_json("manifest.json", "spaces", True)
             manifest = manifest[map_name]
 
-        (
-            self.minimap_size,
-            self.minimap_space_size,
-            self.minimap_scaling,
-        ) = manifest
-        assert isinstance(self.minimap_size, int)
+        minimap_size, self.minimap_space_size, minimap_scaling = manifest
+        assert isinstance(minimap_size, int)
         assert isinstance(self.minimap_space_size, int)
-        assert isinstance(self.minimap_scaling, float)
+        assert isinstance(minimap_scaling, float)
         assert 0 < self.minimap_space_size <= 1600
-        assert 760 == self.minimap_size
+        assert 760 == minimap_size
+        self.minimap_size = self.px(minimap_size)
+        self.minimap_scaling = minimap_scaling * self.render_scale
 
     def get_scaled(
         self, xy: tuple[Number, Number], flip_y=True
@@ -250,6 +269,9 @@ class RenderDual(RendererBase):
         resolution: Optional[tuple[int, int]] = None,
         interpolation: str = "blend",
     ):
+        if interpolation == "native":
+            raise ValueError("native interpolation is not supported for dual renders")
+        self._configure_resolution(resolution)
         self._load_map()
 
         assert self.minimap_fg
@@ -346,7 +368,7 @@ class RenderDual(RendererBase):
 
             self.conman.tick()
 
-            minimap_bg.paste(minimap_img, (40, 90))
+            minimap_bg.paste(minimap_img, self.map_origin)
             video_writer.send(minimap_bg.tobytes())
         video_writer.close()
 
@@ -422,10 +444,13 @@ class Renderer(RendererBase):
         progress_cb: Optional[Callable[[float], Any]] = None,
         speed: Optional[float] = None,
         resolution: Optional[tuple[int, int]] = None,
-        interpolation: str = "blend",
+        interpolation: str = "native",
     ):
         """Starts the rendering process"""
         self._check_if_operations()
+        self._configure_resolution(resolution)
+        if interpolation == "native" and speed is not None and fps < speed:
+            raise ValueError("native interpolation requires fps to be at least speed")
         self._load_map()
 
         assert self.minimap_fg
@@ -454,28 +479,21 @@ class Renderer(RendererBase):
         video_writer.send(None)
 
         self._draw_header(self.minimap_bg)
-        last_key = list(self.replay_data.events)[-1]
-
-        if self.use_tqdm:
-            prog = tqdm(self.replay_data.events.keys())
-        else:
-            prog = self.replay_data.events.keys()
-
-        total = len(prog)
+        event_keys = sorted(self.replay_data.events)
+        last_key = event_keys[-1]
         last_per = 0.0
 
-        for idx, game_time in enumerate(prog):
+        def update_progress(index: int, total: int):
+            nonlocal last_per
             if progress_cb:
-                per = round((idx + 1) / total, 1)
+                per = round((index + 1) / total, 1)
                 if per > last_per:
                     last_per = per
                     progress_cb(per)
 
+        def draw_frame(game_time):
             minimap_img = self.minimap_fg.copy()
             minimap_bg = self.minimap_bg.copy()
-
-            draw = ImageDraw.Draw(minimap_img)
-            self.conman.update(game_time)
 
             if not self.is_operations:
                 layer_capture.draw(game_time, minimap_img)
@@ -485,7 +503,7 @@ class Renderer(RendererBase):
             layer_ward.draw(game_time, minimap_img)
             layer_markers.draw(game_time, minimap_img)
             layer_shot.draw(game_time, minimap_img)
-            layer_torpedo.draw(game_time, draw)
+            layer_torpedo.draw(game_time, ImageDraw.Draw(minimap_img))
             layer_ship.draw(game_time, minimap_img)
             layer_smoke.draw(game_time, minimap_img)
             layer_plane.draw(game_time, minimap_img)
@@ -500,65 +518,119 @@ class Renderer(RendererBase):
                 if self.enable_chat:
                     layer_chat.draw(game_time, minimap_bg)
 
+            return minimap_img, minimap_bg
+
+        if interpolation == "native":
+            source_speed = speed if speed is not None else fps
+            self.frame_delta = source_speed / fps
+            timeline = native_timeline(event_keys, fps, source_speed)
+            normal_frame_count = max(
+                0, ceil((len(event_keys) - 1) * fps / source_speed)
+            )
+            prog = tqdm(timeline, total=normal_frame_count) if self.use_tqdm else timeline
+            has_active_interval = False
+
+            for frame_index, current_key, next_key, alpha, first in prog:
+                update_progress(frame_index, normal_frame_count + 1)
+                if first:
+                    if has_active_interval:
+                        self.conman.tick()
+                    self.conman.update(current_key)
+                    has_active_interval = True
+
+                sample_key = ("native", frame_index)
+                self.replay_data.events[sample_key] = interpolate_events(
+                    self.replay_data.events[current_key],
+                    self.replay_data.events[next_key],
+                    alpha,
+                    include_transients=first,
+                )
+                try:
+                    minimap_img, minimap_bg = draw_frame(sample_key)
+                    minimap_bg.paste(minimap_img, self.map_origin)
+                    video_writer.send(minimap_bg.tobytes())
+                finally:
+                    self.replay_data.events.pop(sample_key)
+
+            if has_active_interval:
+                self.conman.tick()
+            self.conman.update(last_key)
+            update_progress(normal_frame_count, normal_frame_count + 1)
+            minimap_img, minimap_bg = draw_frame(last_key)
+            self._write_ending(
+                video_writer, minimap_img, minimap_bg, fps
+            )
+            video_writer.close()
+            return
+
+        prog = tqdm(event_keys) if self.use_tqdm else event_keys
+        total = len(event_keys)
+
+        for idx, game_time in enumerate(prog):
+            update_progress(idx, total)
+            self.conman.update(game_time)
+            minimap_img, minimap_bg = draw_frame(game_time)
+
             self.conman.tick()
 
             if game_time == last_key:
-                img_win = Image.new("RGBA", self.minimap_fg.size)
-                drw_win = ImageDraw.Draw(img_win)
-                font = self.resman.load_font("warhelios_bold.ttf", size=48)
-                player = self.replay_data.player_info[
-                    self.replay_data.owner_id
-                ]
-
-                team_id = self.replay_data.game_result.team_id
-
-                match team_id:
-                    case a if a == player.team_id and a != -1:
-                        text = "VICTORY"
-                    case a if a != player.team_id and a != -1:
-                        text = "DEFEAT"
-                    case _:
-                        text = "DRAW"
-
-                tw, th = map(lambda i: i / 2, font.getbbox(text)[2:])
-                mid_x, mid_y = map(lambda i: i / 2, minimap_img.size)
-                offset_y = 6
-                px, py = mid_x - tw, mid_y - th - offset_y
-
                 timeline_fps = speed if speed is not None else fps
-                end_frame_count = round(3 * timeline_fps)
-                fade_frame_count = 1.5 * timeline_fps
-                for i in range(end_frame_count):
-                    per = min(1, i / fade_frame_count)
-                    drw_win.text(
-                        (px, py),
-                        text=text,
-                        font=font,
-                        fill=(255, 255, 255, round(255 * per)),
-                        stroke_width=4,
-                        stroke_fill=(*self.bg_color[:3], round(255 * per)),
-                    )
-
-                    minimap_img = Image.alpha_composite(minimap_img, img_win)
-                    minimap_bg.paste(minimap_img, (40, 90))
-                    video_writer.send(minimap_bg.tobytes())
+                self._write_ending(
+                    video_writer, minimap_img, minimap_bg, timeline_fps
+                )
             else:
-                minimap_bg.paste(minimap_img, (40, 90))
+                minimap_bg.paste(minimap_img, self.map_origin)
                 video_writer.send(minimap_bg.tobytes())
         video_writer.close()
+
+    def _write_ending(self, video_writer, minimap_img, minimap_bg, timeline_fps):
+        img_win = Image.new("RGBA", self.minimap_fg.size)
+        font = self.resman.load_font("warhelios_bold.ttf", size=48)
+        player = self.replay_data.player_info[self.replay_data.owner_id]
+        team_id = self.replay_data.game_result.team_id
+
+        match team_id:
+            case a if a == player.team_id and a != -1:
+                text = "VICTORY"
+            case a if a != player.team_id and a != -1:
+                text = "DEFEAT"
+            case _:
+                text = "DRAW"
+
+        tw, th = map(lambda i: i / 2, font.getbbox(text)[2:])
+        mid_x, mid_y = map(lambda i: i / 2, minimap_img.size)
+        px, py = mid_x - tw, mid_y - th - self.px(6)
+        end_frame_count = round(3 * timeline_fps)
+        fade_frame_count = 1.5 * timeline_fps
+        for i in range(end_frame_count):
+            per = min(1, i / fade_frame_count)
+            frame_overlay = img_win.copy()
+            frame_draw = ImageDraw.Draw(frame_overlay)
+            frame_draw.text(
+                (px, py),
+                text=text,
+                font=font,
+                fill=(255, 255, 255, round(255 * per)),
+                stroke_width=max(1, self.px(4)),
+                stroke_fill=(*self.bg_color[:3], round(255 * per)),
+            )
+            frame = Image.alpha_composite(minimap_img, frame_overlay)
+            output = minimap_bg.copy()
+            output.paste(frame, self.map_origin)
+            video_writer.send(output.tobytes())
 
     def _draw_header(self, image: Image.Image):
         draw = ImageDraw.Draw(image)
 
         logo = self.resman.load_image("logo.png")
-        image.paste(logo, (840, 25), logo)
+        image.paste(logo, self.xy((840, 25)), logo)
 
         font_large = self.resman.load_font("warhelios_bold.ttf", size=35)
-        draw.text((945, 30), "Minimap Renderer", "white", font_large)
+        draw.text(self.xy((945, 30)), "Minimap Renderer", "white", font_large)
 
         font_large = self.resman.load_font("warhelios_bold.ttf", size=16)
         draw.text(
-            (945, 75),
+            self.xy((945, 75)),
             "https://github.com/WoWs-Builder-Team",
             "white",
             font_large,

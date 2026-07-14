@@ -51,8 +51,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--interpolation",
         choices=INTERPOLATION_MODES,
-        default="blend",
-        help="frame interpolation mode (default: blend)",
+        default="native",
+        help="frame interpolation mode (default: native)",
     )
     namespace = parser.parse_args()
     if namespace.fps <= 0:

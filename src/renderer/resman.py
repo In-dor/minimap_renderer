@@ -17,6 +17,12 @@ class ResourceManager:
         self._cache = {}
         self._default_res = f"{__package__}.resources"
         self._versions = version
+        self.render_scale = 1.0
+
+    def set_render_scale(self, scale: float):
+        if scale <= 0:
+            raise ValueError("render scale must be greater than 0")
+        self.render_scale = scale
 
     def load_json(
         self,
@@ -52,7 +58,8 @@ class ResourceManager:
     def load_font(
         self, filename: str, path: Optional[str] = None, size=12
     ) -> ImageFont.FreeTypeFont:
-        key = f"{path}.{filename}.{size}"
+        physical_size = max(1, round(size * self.render_scale))
+        key = f"{path}.{filename}.{physical_size}"
         if cached := self._cache.get(key, None):
             return cached
 
@@ -68,7 +75,7 @@ class ResourceManager:
             res_package = res_package if not path else f"{res_package}.{path}"
 
         with open_binary(res_package, filename) as fr:
-            data = ImageFont.truetype(fr, size=size)
+            data = ImageFont.truetype(fr, size=physical_size)
             self._cache[key] = data
             return data
 
@@ -151,7 +158,7 @@ class ResourceManager:
         if rot:
             key.append(str(rot))
 
-        key.append(str(nearest))
+        key.extend((str(nearest), str(self.render_scale)))
         key_name = "_".join(key)
 
         if key_name in self._cache:
@@ -179,6 +186,16 @@ class ResourceManager:
                     Image.Resampling.LANCZOS
                     if not nearest
                     else Image.Resampling.NEAREST,
+                )
+            elif self.render_scale != 1:
+                image = image.resize(
+                    (
+                        max(1, round(image.width * self.render_scale)),
+                        max(1, round(image.height * self.render_scale)),
+                    ),
+                    Image.Resampling.NEAREST
+                    if nearest
+                    else Image.Resampling.LANCZOS,
                 )
             if rot:
                 image = image.rotate(

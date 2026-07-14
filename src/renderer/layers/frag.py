@@ -54,13 +54,13 @@ class LayerFragBase(LayerBase):
             image (Image.Image): The image where the logs will be drawn into.
         """
         evt_flag = self._replay_data.events[game_time].evt_frag
-        self._base = Image.new("RGBA", (560, 50))
+        self._base = Image.new("RGBA", self._renderer.xy((560, 50)))
         self._frags.extend(evt_flag)
 
         if not self._renderer.enable_chat:
-            y_pos = image.height - 5
+            y_pos = image.height - self._renderer.px(5)
         else:
-            y_pos = 755
+            y_pos = self._renderer.px(755)
 
         for frag in reversed(self._frags[-5:]):
             is_fragger_building = False
@@ -238,7 +238,7 @@ class LayerFragBase(LayerBase):
 
             for img in self.build(line):
                 y_pos -= img.height
-                x_pos = (image.width - 30) - img.width
+                x_pos = (image.width - self._renderer.px(30)) - img.width
                 image.alpha_composite(img, (x_pos, y_pos))
 
     def _hash(self, line):
@@ -289,12 +289,12 @@ class LayerFragBase(LayerBase):
                     total_width += a.width
                     part.append(el)
                 case a if isinstance(a, int):
-                    total_width += a
+                    total_width += self._renderer.px(a)
                     part.append(el)
                 case "after":
                     idx += 1
 
-        is_long = total_width > 525
+        is_long = total_width > self._renderer.px(525)
 
         part_a = parts[0]
         part_b = parts[1]
@@ -313,7 +313,7 @@ class LayerFragBase(LayerBase):
         if line_hash in self._generated_lines:
             return self._generated_lines[line_hash]
 
-        base = Image.new("RGBA", (525, 17))
+        base = Image.new("RGBA", self._renderer.xy((525, 17)))
         base_draw = ImageDraw.Draw(base)
         pos_x = 0
 
@@ -328,10 +328,10 @@ class LayerFragBase(LayerBase):
                 ) and isinstance(c, int):
                     nw, nh = round(a.width * c), round(a.height * c)
                     a = a.resize((nw, nh), Image.Resampling.LANCZOS)
-                    base.alpha_composite(a, (pos_x, 0 + b))
+                    base.alpha_composite(a, (pos_x, self._renderer.px(b)))
                     pos_x += a.width
                 case a if isinstance(a, int):
-                    pos_x += a
-        base = base.crop((0, 0, pos_x, 17))
+                    pos_x += self._renderer.px(a)
+        base = base.crop((0, 0, pos_x, self._renderer.px(17)))
         self._generated_lines[line_hash] = base
         return base

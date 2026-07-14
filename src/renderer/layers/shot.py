@@ -53,6 +53,7 @@ class LayerShotBase(LayerBase):
         }
         self._empties = 0
         self._hits: set[int] = set()
+        self._projectile_phase: dict[int, float] = {}
 
     def draw(self, game_time: int, image: Image.Image):
         """Draws the shots directly to the image via ImageDraw.
@@ -95,10 +96,26 @@ class LayerShotBase(LayerBase):
         projectiles = []
 
         for sid in list(self._projectiles):
-            if projectile := self._projectiles.get(sid, None):
-                projectiles.append(projectile.pop(0))
-            else:
+            path = self._projectiles.get(sid)
+            if not path:
                 self._projectiles.pop(sid)
+                self._projectile_phase.pop(sid, None)
+                continue
+
+            phase = self._projectile_phase.get(sid, 0.0)
+            current = path[0]
+            following = path[1] if len(path) > 1 else current
+            projectile = current[:2] + tuple(
+                a + (b - a) * phase
+                for a, b in zip(current[2:], following[2:])
+            )
+            projectiles.append(projectile)
+
+            phase += self._renderer.frame_delta
+            while phase >= 1 and path:
+                path.pop(0)
+                phase -= 1
+            self._projectile_phase[sid] = phase
 
         projectiles.sort(
             key=lambda o: self._projectiles_data[o[1]], reverse=True
@@ -157,7 +174,7 @@ class LayerShotBase(LayerBase):
                 draw.line(
                     [(cx, cy), (px, py)],
                     fill=color,
-                    width=2,
+                    width=max(1, self._renderer.px(2)),
                 )
             except KeyError:
                 pass

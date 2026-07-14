@@ -32,16 +32,17 @@ Try it on in [Google Colab](https://colab.research.google.com/drive/1OyomQe5pHaD
 Replays can be rendered with `render` module. The full usage is:
 
 ```
-python -m render --replay <replay_path> [--fps 60] [--speed 15] [--resolution 1920x1200] [--quality 8] [--interpolation blend]
+python -m render --replay <replay_path> [--fps 60] [--speed 15] [--resolution 1920x1200] [--quality 8] [--interpolation native]
 ```
 
 This will create a `.mp4` file from your replay file.
 
 `--fps` controls output smoothness independently from `--speed`, which controls
-the timelapse playback rate. The default `blend` interpolation is fast and
-smooth. Use `motion` for motion-compensated interpolation at a substantial CPU
-cost, or `duplicate` for the fastest encoding. The resolution must contain
-positive even dimensions.
+the timelapse playback rate. The default `native` mode renders intermediate
+object states directly and avoids whole-frame blending. `blend`, `motion`, and
+`duplicate` remain available as FFmpeg post-processing alternatives. Resolution
+is rendered directly and must preserve the layout aspect ratio (`1360:850` when
+logs are enabled).
 
 Since the renderer is installed to a virtual environment, you need to activate it once before you render. Once activated, you can render any replay file as long as it is a valid replay file.
 

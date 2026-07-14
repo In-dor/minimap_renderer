@@ -79,8 +79,9 @@ class LayerTorpedoBase(LayerBase):
             else:
                 color = COLORS_NORMAL[relation]
 
+            radius = max(1, self._renderer.px(2))
             draw.ellipse(
-                [(x - 2, y - 2), (x + 2, y + 2)],
+                [(x - radius, y - radius), (x + radius, y + radius)],
                 fill=color,
             )
         self._active_torpedoes.update(events.evt_torpedo)
@@ -113,7 +114,7 @@ class LayerTorpedoBase(LayerBase):
             x1, y1 = flip_y(active_torpedo.origin)
             angle = active_torpedo.yaw
             angle = angle - radians(90)
-            m_s_bw = active_torpedo.speed_bw
+            m_s_bw = active_torpedo.speed_bw * self._renderer.frame_delta
             (x2, y2) = (
                 x1 + m_s_bw * cos(angle),
                 y1 + m_s_bw * sin(angle),
@@ -128,8 +129,9 @@ class LayerTorpedoBase(LayerBase):
             else:
                 color = COLORS_NORMAL[relation]
 
+            radius = max(1, self._renderer.px(2))
             draw.ellipse(
-                [(x - 2, y - 2), (x + 2, y + 2)],
+                [(x - radius, y - radius), (x + radius, y + radius)],
                 fill=color,
             )
             self._active_torpedoes[sid] = active_torpedo._replace(

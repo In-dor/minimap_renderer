@@ -36,18 +36,18 @@ class LayerScoreBase(LayerBase):
         self._timers_font = self._renderer.resman.load_font(
             filename="warhelios_bold.ttf", size=17
         )
-        self._base = Image.new("RGBA", (714, 50))
-        self._timers_base = Image.new("RGBA", (40, 50))
+        self._base = Image.new("RGBA", self._renderer.xy((714, 50)))
+        self._timers_base = Image.new("RGBA", self._renderer.xy((40, 50)))
         draw = ImageDraw.Draw(self._timers_base)
         draw.text(
-            ALLY_TIMER_POS,
+            self._renderer.xy(ALLY_TIMER_POS),
             ":",
             COLORS_NORMAL[0],
             self._timers_font,
             anchor="mm",
         )
         draw.text(
-            ENEMY_TIMER_POS,
+            self._renderer.xy(ENEMY_TIMER_POS),
             ":",
             COLORS_NORMAL[1],
             self._timers_font,
@@ -89,7 +89,7 @@ class LayerScoreBase(LayerBase):
         draw = ImageDraw.Draw(base)
         st = f"{sc1.score} : {sc2.score}"
         st_w, st_h = self._font.getbbox(st)[2:]
-        st_h += 5
+        st_h += self._renderer.px(5)
         draw.text(
             (
                 round(base.width / 2 - st_w / 2),
@@ -101,8 +101,8 @@ class LayerScoreBase(LayerBase):
         )
 
         mid = base.width / 2
-        space_width = 150
-        margin = 5
+        space_width = self._renderer.px(150)
+        margin = self._renderer.px(5)
 
         x1, y1 = margin, margin
         x2, y2 = mid - space_width / 2, base.height - margin
@@ -125,7 +125,7 @@ class LayerScoreBase(LayerBase):
         if self._red_tag:
             self._draw_tag(draw, self._red_tag, (x3, x4), (y3, y4))
 
-        image.alpha_composite(base, (40, 0))
+        image.alpha_composite(base, self._renderer.xy((40, 0)))
 
         ttw = self._replay_data.events[game_time].evt_times_to_win
         if ttw is None:
@@ -138,34 +138,34 @@ class LayerScoreBase(LayerBase):
         draw = ImageDraw.Draw(timers_base)
 
         draw.text(
-            (ALLY_TIMER_POS[0] - 3, ALLY_TIMER_POS[1]),
+            self._renderer.xy((ALLY_TIMER_POS[0] - 3, ALLY_TIMER_POS[1])),
             ally_label[0],
             COLORS_NORMAL[0],
             self._timers_font,
             anchor="rm",
         )
         draw.text(
-            (ALLY_TIMER_POS[0] + 2, ALLY_TIMER_POS[1]),
+            self._renderer.xy((ALLY_TIMER_POS[0] + 2, ALLY_TIMER_POS[1])),
             ally_label[1],
             COLORS_NORMAL[0],
             self._timers_font,
             anchor="lm",
         )
         draw.text(
-            (ENEMY_TIMER_POS[0] - 3, ENEMY_TIMER_POS[1]),
+            self._renderer.xy((ENEMY_TIMER_POS[0] - 3, ENEMY_TIMER_POS[1])),
             enemy_label[0],
             COLORS_NORMAL[1],
             self._timers_font,
             anchor="rm",
         )
         draw.text(
-            (ENEMY_TIMER_POS[0] + 2, ENEMY_TIMER_POS[1]),
+            self._renderer.xy((ENEMY_TIMER_POS[0] + 2, ENEMY_TIMER_POS[1])),
             enemy_label[1],
             COLORS_NORMAL[1],
             self._timers_font,
             anchor="lm",
         )
-        image.alpha_composite(timers_base, (757, 0))
+        image.alpha_composite(timers_base, self._renderer.xy((757, 0)))
 
     def _draw_tag(
         self,
@@ -180,12 +180,12 @@ class LayerScoreBase(LayerBase):
         bar_mid = (x2 - x1) / 2
         bar_mid += x1
         ty = y1 + (y2 - y1) / 2 - th / 2
-        ty -= 5
+        ty -= self._renderer.px(5)
         draw.text(
             (bar_mid - tw / 2, ty),
             tag,
             "white",
             self._font,
             stroke_fill=self._renderer.bg_color,
-            stroke_width=2,
+            stroke_width=max(1, self._renderer.px(2)),
         )

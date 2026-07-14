@@ -83,13 +83,13 @@ class LayerCaptureBase(LayerBase):
                 to_color = COLORS_NORMAL[cp.relation]
                 progress = replace_color(normal, from_color, to_color)
 
-            px = round(cp_area.width / 2 - progress.width / 2) + 1
-            py = round(cp_area.height / 2 - progress.height / 2) + 1
+            px = round(cp_area.width / 2 - progress.width / 2) + self._renderer.px(1)
+            py = round(cp_area.height / 2 - progress.height / 2) + self._renderer.px(1)
 
             cp_area.alpha_composite(progress, (px, py))
 
-            ix = round(cp_area.width / 2 - icon.width / 2) + 1
-            iy = round(cp_area.height / 2 - icon.height / 2) + 1
+            ix = round(cp_area.width / 2 - icon.width / 2) + self._renderer.px(1)
+            iy = round(cp_area.height / 2 - icon.height / 2) + self._renderer.px(1)
 
             cp_area.alpha_composite(icon, (ix, iy))
 

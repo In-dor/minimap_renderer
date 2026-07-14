@@ -227,10 +227,14 @@ class LayerShipBase(LayerBase):
                         -1,
                         0,
                     ]:
-                        vx = 15
-                        vy = 65
+                        vx = self._renderer.px(15)
+                        vy = self._renderer.px(65)
+                        marker_size = max(1, self._renderer.px(5))
                         draw = ImageDraw.Draw(holder)
-                        draw.rectangle(((vx, vy), (vx + 5, vy + 5)), fill="orange")
+                        draw.rectangle(
+                            ((vx, vy), (vx + marker_size, vy + marker_size)),
+                            fill="orange",
+                        )
 
                     if is_in_view_range:
                         draw_health_bar(
@@ -240,8 +244,8 @@ class LayerShipBase(LayerBase):
                         )
 
                     side_points = [
-                        (760, y),
-                        (x, 760),
+                        (self._renderer.minimap_size, y),
+                        (x, self._renderer.minimap_size),
                         (0, y),
                         (x, 0),
                     ]
@@ -252,26 +256,27 @@ class LayerShipBase(LayerBase):
                     )
 
                     angle = 0
-                    c_y_pos = 20
+                    c_y_pos = self._renderer.px(20)
+                    edge_distance = self._renderer.px(40)
 
-                    if d1 <= 40 and d2 <= 40:
+                    if d1 <= edge_distance and d2 <= edge_distance:
                         angle = -135
-                    elif d2 <= 40 and d3 <= 40:
+                    elif d2 <= edge_distance and d3 <= edge_distance:
                         angle = 135
-                    elif d3 <= 40 and d4 <= 40:
+                    elif d3 <= edge_distance and d4 <= edge_distance:
                         angle = 45
-                    elif d4 <= 40 and d1 <= 40:
+                    elif d4 <= edge_distance and d1 <= edge_distance:
                         angle = -45
                     else:
-                        if d1 <= 40:
+                        if d1 <= edge_distance:
                             angle = -90
-                        if d2 <= 40:
+                        if d2 <= edge_distance:
                             angle = -180
-                        if d3 <= 40:
+                        if d3 <= edge_distance:
                             angle = 90
 
-                    if angle or d4 <= 40:
-                        c_y_pos = 83
+                    if angle or d4 <= edge_distance:
+                        c_y_pos = self._renderer.px(83)
 
                     self._ship_consumable(
                         holder,
@@ -307,7 +312,7 @@ class LayerShipBase(LayerBase):
             )
 
     def _ship_consumable(
-        self, image: Image.Image, vehicle_id: int, params_id: int, y=20
+        self, image: Image.Image, vehicle_id: int, params_id: int, y=None
     ):
         """Draws the currently in used consumable(s) to the ship's icon holder.
 
@@ -316,6 +321,7 @@ class LayerShipBase(LayerBase):
             vehicle_id (int): The vehicle id.
             params_id (int): The vehicle's game params id.
         """
+        y = self._renderer.px(20) if y is None else y
         if ac := self._renderer.conman.active_consumables.get(vehicle_id, None):
             aid_hash = hash(tuple(ac))
 
@@ -323,7 +329,10 @@ class LayerShipBase(LayerBase):
                 x = int(image.width / 2 - c_image.width / 2)
                 image.alpha_composite(c_image, (x, y))
             else:
-                c_icons_holder = Image.new("RGBA", (20 * len(ac), 20))
+                icon_size = self._renderer.px(20)
+                c_icons_holder = Image.new(
+                    "RGBA", (icon_size * len(ac), icon_size)
+                )
                 x_pos = 0
 
                 for aid, _ in ac.items():
@@ -344,7 +353,7 @@ class LayerShipBase(LayerBase):
                         c_image = self._renderer.resman.load_image(
                             filename,
                             path="consumables",
-                            size=(20, 20),
+                            size=(icon_size, icon_size),
                         )
                     except (FileNotFoundError, ModuleNotFoundError):
                         if filename not in self._missing_consumable_icons:
@@ -358,7 +367,7 @@ class LayerShipBase(LayerBase):
                         continue
 
                     c_icons_holder.alpha_composite(c_image, (x_pos, 0))
-                    x_pos += 20
+                    x_pos += icon_size
 
                 self._consumable_cache[aid_hash] = c_icons_holder
                 image.alpha_composite(

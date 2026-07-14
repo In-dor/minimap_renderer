@@ -36,8 +36,8 @@ class LayerChatBase(LayerBase):
         evt_messages = self._replay_data.events[game_time].evt_chat
         self._messages.extend(evt_messages)
 
-        x_pos = 805
-        y_pos = image.height - 5
+        x_pos = self._renderer.px(805)
+        y_pos = image.height - self._renderer.px(5)
 
         for message in reversed(self._messages[-5:]):
 
@@ -65,7 +65,7 @@ class LayerChatBase(LayerBase):
         self._font = self._renderer.resman.load_font_with_text(
             message.message, size=12
         )
-        base = Image.new("RGBA", (560, 17))
+        base = Image.new("RGBA", self._renderer.xy((560, 17)))
         draw = ImageDraw.Draw(base)
         player = self._players[message.player_id]
 
@@ -111,12 +111,12 @@ class LayerChatBase(LayerBase):
         m_w, _ = self._font.getbbox(message.message)[2:]
         text = message.message
 
-        if x_pos + m_w + 805 > 1330:
+        if x_pos + m_w + self._renderer.px(805) > self._renderer.px(1330):
             for i in range(1, len(message.message)):
                 n_t = f"{message.message[:-i]}..."
                 m_w, _ = self._font.getbbox(n_t)[2:]
 
-                if x_pos + m_w + 805 <= 1330:
+                if x_pos + m_w + self._renderer.px(805) <= self._renderer.px(1330):
                     text = n_t
                     break
 

@@ -69,7 +69,11 @@ class LayerHealthBase(LayerBase):
         )
 
     def _add_padding(self, bar: Image.Image):
-        padded = Image.new("RGBA", (bar.width, bar.height + 4), (0, 0, 0, 0))
+        padded = Image.new(
+            "RGBA",
+            (bar.width, bar.height + self._renderer.px(4)),
+            (0, 0, 0, 0),
+        )
         padded.alpha_composite(bar, (0, 0))
         return padded
 
@@ -176,9 +180,11 @@ class LayerHealthBase(LayerBase):
         hp_w, hp_h = self._font.getbbox(hp_max_text)[2:]
         n_w, n_h = self._font.getbbox(info["name"])[2:]
 
-        bg_bar = bg_bar.resize((235, 62), resample=Image.Resampling.LANCZOS)
+        bg_bar = bg_bar.resize(
+            self._renderer.xy((235, 62)), resample=Image.Resampling.LANCZOS
+        )
 
-        px = CENTER - round(bg_bar.width / 2)
+        px = self._renderer.px(CENTER) - round(bg_bar.width / 2)
 
         th = Image.new("RGBA", (bg_bar.width, max(hp_h, n_h, hp_c_h)))
         th_draw = ImageDraw.Draw(th)
@@ -217,8 +223,8 @@ class LayerHealthBase(LayerBase):
                 FLOOD_NODE_POSITIONS[flood_nodes],
             )
 
-        image.paste(th, (px, 205), th)
-        image.paste(bg_bar, (px, 145), bg_bar)
+        image.paste(th, (px, self._renderer.px(205)), th)
+        image.paste(bg_bar, (px, self._renderer.px(145)), bg_bar)
 
     def _draw_nodes(
         self,

@@ -15,21 +15,21 @@ LOGGER = logging.getLogger("renderer")
 LOGGER.setLevel(logging.INFO)
 
 
-def draw_grid() -> Image.Image:
+def draw_grid(size: int = 760, line_width: int = 1) -> Image.Image:
     """Draws a grid to the image and returns it.
 
     Returns:
         Image.Image: An image with grid on it.
     """
-    base = Image.new("RGBA", (760, 760))
+    base = Image.new("RGBA", (size, size))
     draw = ImageDraw.Draw(base)
-    for x in range(0, 760, round(760 / 10)):
+    for x in range(0, size, round(size / 10)):
         if x == 0:
             continue
         draw.line([(x, 0), (x, base.height)], fill="#ffffff40")
         draw.line([(0, x), (base.width, x)], fill="#ffffff40")
     draw.rectangle((0, 0, base.width - 1, base.height - 1),
-                   outline="#ffffff40", width=1)
+                   outline="#ffffff40", width=line_width)
     return base.copy()
 
 
@@ -48,8 +48,9 @@ def generate_holder(
         an image with the ships name on it.
     """
     dict_player_holder: dict[int, Image.Image] = {}
-    text_offset = 16
-    hw, hh = (100, 100)
+    scale = resman.render_scale
+    text_offset = round(16 * scale)
+    hw, hh = (round(100 * scale), round(100 * scale))
     ships = resman.load_json("ships.json")
     font = resman.load_font(filename="warhelios_bold.ttf", size=12)
 
@@ -101,7 +102,7 @@ def paste_args_centered(
 
 
 def draw_health_bar(
-    image: Image.Image, width=50, height=5, y_pos=65, color="red", hp_per=1.0
+    image: Image.Image, width=None, height=None, y_pos=None, color="red", hp_per=1.0
 ):
     """Draws a health bar to the image given.
 
@@ -114,6 +115,10 @@ def draw_health_bar(
         hp_per (float, optional): Hit points for the health bar.
         Defaults to 1.0.
     """
+    scale = image.width / 100
+    width = round(50 * scale) if width is None else width
+    height = max(1, round(5 * scale)) if height is None else height
+    y_pos = round(65 * scale) if y_pos is None else y_pos
     draw = ImageDraw.Draw(image)
     assert width <= image.width
     assert y_pos < image.height - height
@@ -124,7 +129,7 @@ def draw_health_bar(
     xy1 = (x1, y1, x2, y2)
     xy2 = (x1, y1, (image.width / 2 + width / 2), y2)
     draw.rectangle(xy=xy1, fill=color)
-    draw.rectangle(xy=xy2, outline=color, width=1)
+    draw.rectangle(xy=xy2, outline=color, width=max(1, round(scale)))
 
 
 def replace_color(img: Image.Image, from_color: str, to_color: str):

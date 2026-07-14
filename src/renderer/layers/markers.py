@@ -86,9 +86,15 @@ class LayerMarkersBase(LayerBase):
                     if aid == 11:
                         per = dist_ship_bw / 200
                         dash = round(30 * per)
-                        shape = self._draw_arc_aa((w, h), color, dash=dash)
+                        shape = self._draw_arc_aa(
+                            (w, h), color, dash=dash,
+                            width=max(1, self._renderer.px(2)),
+                        )
                     else:
-                        shape = self._draw_ellipse_aa((w, h), color)
+                        shape = self._draw_ellipse_aa(
+                            (w, h), color,
+                            width=max(1, self._renderer.px(2)),
+                        )
                     image.alpha_composite(
                         shape, (x - shape.width // 2, y - shape.height // 2)
                     )

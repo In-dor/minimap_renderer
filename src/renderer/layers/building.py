@@ -47,7 +47,8 @@ class LayerBuildingBase(LayerBase):
                     color = COLORS_NORMAL[bi.relation]
                 else:
                     color = "#000000"
-                icon = Image.new("RGBA", (5, 5))
+                icon_size = self._renderer.px(5)
+                icon = Image.new("RGBA", (icon_size, icon_size))
                 icon_draw = ImageDraw.Draw(icon)
                 icon_draw.ellipse([(0, 0), icon.size], color)
             else:

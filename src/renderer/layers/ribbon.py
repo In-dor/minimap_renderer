@@ -54,8 +54,9 @@ class LayerRibbonBase(LayerBase):
         evt_ribbons = self._replay_data.events[game_time].evt_ribbon
         evt_achievement = self._replay_data.events[game_time].evt_achievement
 
-        x_pos = 805
-        y_pos = 260
+        start_x = self._renderer.px(805)
+        x_pos = start_x
+        y_pos = self._renderer.px(260)
         last_y_height = 0
         ribbon_count = 0
 
@@ -106,7 +107,7 @@ class LayerRibbonBase(LayerBase):
 
                         if idx % 4 == 0:
                             y_pos += c_image.height
-                            x_pos = 805
+                            x_pos = start_x
                         continue
 
                 r_img = self._renderer.resman.load_image(f_name, path=r_res)
@@ -114,12 +115,15 @@ class LayerRibbonBase(LayerBase):
                 text = f"x{r_count}"
                 t_w, t_h = self._font.getbbox(text)[2:]
                 r_draw.text(
-                    ((r_img.width - t_w) - 3, (r_img.height - t_h) - 3),
+                    (
+                        (r_img.width - t_w) - self._renderer.px(3),
+                        (r_img.height - t_h) - self._renderer.px(3),
+                    ),
                     text,
                     "white",
                     self._font,
                     stroke_fill="black",
-                    stroke_width=1,
+                    stroke_width=max(1, self._renderer.px(1)),
                 )
 
                 image.alpha_composite(r_img, (x_pos, y_pos))
@@ -128,11 +132,11 @@ class LayerRibbonBase(LayerBase):
 
                 if idx % 4 == 0:
                     y_pos += r_img.height
-                    x_pos = 805
+                    x_pos = start_x
 
                 self._images[r_name] = (r_count, r_img.copy())
 
-        a_x_pos = 805
+        a_x_pos = start_x
 
         if ribbon_count % 4 != 0:
             y_pos += last_y_height
@@ -149,7 +153,7 @@ class LayerRibbonBase(LayerBase):
 
                         if a_idx % 6 == 0:
                             y_pos += a_c_image.height
-                            a_x_pos = 805
+                            a_x_pos = start_x
                         continue
 
                 a_icon_res = "achievement_icons"
@@ -161,13 +165,13 @@ class LayerRibbonBase(LayerBase):
                     a_tw, a_th = self._font.getsize(f"x{a_count}")
                     a_image_draw.text(
                         (
-                            (a_image.width - a_tw - 3),
-                            (a_image.height - a_th - 3),
+                            (a_image.width - a_tw - self._renderer.px(3)),
+                            (a_image.height - a_th - self._renderer.px(3)),
                         ),
                         f"x{a_count}",
                         "white",
                         self._font,
-                        stroke_width=1,
+                        stroke_width=max(1, self._renderer.px(1)),
                         stroke_fill="black",
                     )
 
@@ -177,6 +181,6 @@ class LayerRibbonBase(LayerBase):
 
                 if a_idx % 6 == 0:
                     y_pos += a_image.height
-                    a_x_pos = 805
+                    a_x_pos = start_x
 
                 self._images[a_id] = (a_count, a_image.copy())

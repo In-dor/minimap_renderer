@@ -3,36 +3,43 @@ from unittest.mock import patch
 import pytest
 from PIL import Image
 
-from renderer.render import RendererBase
+from renderer.render import RenderDual, RendererBase
 
 
 def make_renderer():
     renderer = RendererBase.__new__(RendererBase)
     renderer.minimap_bg = Image.new("RGBA", (1360, 850))
     renderer.logs = True
+    renderer.render_scale = 1
+    renderer.output_size = (1360, 850)
     return renderer
 
 
 @patch("renderer.render.write_frames")
-def test_writer_separates_frame_rate_speed_and_resolution(write_frames):
+def test_writer_encodes_directly_at_render_resolution(write_frames):
     renderer = make_renderer()
+    renderer.minimap_bg = Image.new("RGBA", (1920, 1200))
 
     renderer.get_writer(
-        "output.mp4", fps=60, quality=8, speed=15, resolution=(1920, 1200)
+        "output.mp4",
+        fps=60,
+        quality=8,
+        speed=15,
+        resolution=(1920, 1200),
+        interpolation="native",
     )
 
     kwargs = write_frames.call_args.kwargs
-    assert kwargs["fps"] == 15
-    assert kwargs["size"] == (1360, 850)
-    filter_value = kwargs["output_params"][kwargs["output_params"].index("-vf") + 1]
-    assert "framerate=fps=60" in filter_value
-    assert "scale=1920:1200:flags=lanczos" in filter_value
+    assert kwargs["fps"] == 60
+    assert kwargs["size"] == (1920, 1200)
+    assert "-vf" not in kwargs["output_params"]
 
 
 @patch("renderer.render.write_frames")
 @pytest.mark.parametrize(
     ("interpolation", "expected_filter"),
     [
+        ("native", None),
         ("blend", "framerate=fps=60"),
         ("motion", "minterpolate=fps=60"),
         ("duplicate", "fps=60"),
@@ -52,8 +59,14 @@ def test_writer_supports_interpolation_modes(
     )
 
     kwargs = write_frames.call_args.kwargs
-    filter_value = kwargs["output_params"][kwargs["output_params"].index("-vf") + 1]
-    assert expected_filter in filter_value
+    if expected_filter is None:
+        assert kwargs["fps"] == 60
+        assert "-vf" not in kwargs["output_params"]
+    else:
+        filter_value = kwargs["output_params"][
+            kwargs["output_params"].index("-vf") + 1
+        ]
+        assert expected_filter in filter_value
 
 
 @patch("renderer.render.write_frames")
@@ -65,6 +78,32 @@ def test_writer_keeps_legacy_behavior_without_speed(write_frames):
     kwargs = write_frames.call_args.kwargs
     assert kwargs["fps"] == 20
     assert "-vf" not in kwargs["output_params"]
+
+
+def test_resolution_configures_native_canvas_scale():
+    renderer = make_renderer()
+    renderer.resman = type("Resources", (), {"set_render_scale": lambda _, scale: None})()
+
+    renderer._configure_resolution((1920, 1200))
+
+    assert renderer.render_scale == pytest.approx(24 / 17)
+    assert renderer.output_size == (1920, 1200)
+    assert renderer.map_origin == (56, 127)
+
+
+def test_resolution_rejects_non_native_aspect_ratio():
+    renderer = make_renderer()
+    renderer.resman = type("Resources", (), {"set_render_scale": lambda _, scale: None})()
+
+    with pytest.raises(ValueError, match="aspect ratio"):
+        renderer._configure_resolution((1920, 1080))
+
+
+def test_dual_render_rejects_unimplemented_native_mode():
+    renderer = RenderDual.__new__(RenderDual)
+
+    with pytest.raises(ValueError, match="dual renders"):
+        renderer.start("output.mp4", interpolation="native")
 
 
 @pytest.mark.parametrize(

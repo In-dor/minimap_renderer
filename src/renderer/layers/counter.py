@@ -47,9 +47,9 @@ class LayerCounterBase(LayerBase):
     def damage_name_icon(self):
         """Draws the damage name and icon permanently."""
         assert self._renderer.minimap_bg
-        base = Image.new("RGBA", (125, 95))
+        base = Image.new("RGBA", self._renderer.xy((125, 95)))
         draw = ImageDraw.Draw(base)
-        space = 12
+        space = self._renderer.px(12)
         y_pos = 0
 
         for counter in COUNTERS:
@@ -58,12 +58,17 @@ class LayerCounterBase(LayerBase):
                 filename, path="counter_icons"
             )
             font = self._font_main if name == "DAMAGE" else self._font_com
-            self._y_positions.append(y_pos + Y_POS)
+            self._y_positions.append(y_pos + self._renderer.px(Y_POS))
             tw, th = font.getbbox(name)[2:]
             draw.text((0, y_pos), name, COUNTER_COLOR, font)
-            base.alpha_composite(icon, (tw + offset_x, icon_y))
+            base.alpha_composite(
+                icon,
+                (tw + self._renderer.px(offset_x), self._renderer.px(icon_y)),
+            )
             y_pos += th + space
-        self._renderer.minimap_bg.alpha_composite(base, (X_POS, Y_POS))
+        self._renderer.minimap_bg.alpha_composite(
+            base, self._renderer.xy((X_POS, Y_POS))
+        )
 
     def draw(self, game_time: int, image: Image.Image):
         """Draws the counters on the minimap image.
@@ -88,7 +93,7 @@ class LayerCounterBase(LayerBase):
             if val := self._counter_numbers.get(name, None):
                 l_damage, l_image = val
                 if l_damage == dmg:
-                    x_pos = image.width - l_image.width - 30
+                    x_pos = image.width - l_image.width - self._renderer.px(30)
                     image.alpha_composite(l_image, (x_pos, y_pos))
                     continue
 
@@ -96,7 +101,7 @@ class LayerCounterBase(LayerBase):
             fw, fh = font.getbbox(value)[2:]
             base = Image.new("RGBA", (fw, fh))
             draw = ImageDraw.Draw(base)
-            x_pos = image.width - base.width - 30
+            x_pos = image.width - base.width - self._renderer.px(30)
             draw.text((0, 0), value, COUNTER_COLOR, font)
             self._counter_numbers[name] = [dmg, base.copy()]
             image.alpha_composite(base, (x_pos, y_pos))
