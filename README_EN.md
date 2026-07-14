@@ -92,7 +92,7 @@ python -m render --replay REPLAY
                  [--quality 1-10]
                  [--interpolation {native,blend,motion,duplicate}]
                  [--codec {h264,h265,av1}]
-                 [--encoder {auto,cpu,nvenc,qsv,amf}]
+                 [--encoder {auto,cpu,nvenc,qsv,vaapi,amf}]
 ```
 
 | Option            |     Default | Description                                                                                                                |
@@ -104,11 +104,11 @@ python -m render --replay REPLAY
 | `--quality`       |         `8` | Encoding quality from `1-10`; higher values generally increase quality and file size                                       |
 | `--interpolation` |    `native` | Frame generation mode, described below                                                                                     |
 | `--codec`         |      `h264` | Video format: broadly compatible `h264`, more efficient `h265`, or `av1`                                                   |
-| `--encoder`       |      `auto` | Probes available hardware encoders and falls back to CPU; `cpu`, `nvenc`, `qsv`, and `amf` can also be selected explicitly |
+| `--encoder`       |      `auto` | Probes available hardware encoders and falls back to CPU; `cpu`, `nvenc`, `qsv`, `vaapi`, and `amf` can also be selected explicitly |
 
 ### Video Encoders
 
-`--codec` selects the video format, while `--encoder` selects CPU or a hardware backend. For the selected format, `auto` performs a real encoding test with NVIDIA NVENC, Intel Quick Sync, and AMD AMF in that order instead of merely checking whether FFmpeg lists an encoder. It falls back to the corresponding CPU encoder when the hardware or driver is unavailable, and logs the result.
+`--codec` selects the video format, while `--encoder` selects CPU or a hardware backend. For the selected format, `auto` performs a real encoding test with NVIDIA NVENC, Intel Quick Sync, Linux VAAPI, and AMD AMF in that order instead of merely checking whether FFmpeg lists an encoder. It falls back to the corresponding CPU encoder when the hardware or driver is unavailable, and logs the result.
 
 | Format | CPU fallback | Characteristics                                                                       |
 | ------ | ------------ | ------------------------------------------------------------------------------------- |
@@ -116,7 +116,9 @@ python -m render --replay REPLAY
 | `h265` | `libx265`    | Usually smaller at similar quality, but unsupported by some browsers                  |
 | `av1`  | `libaom-av1` | High compression efficiency; CPU encoding is slow and playback support must be recent |
 
-When an encoder such as `--encoder qsv` is selected explicitly, initialization failure for that format is reported instead of silently switching devices. Intel-based NAS systems normally use `--encoder qsv`; Docker and LXC deployments must also expose `/dev/dri` to the container and install the Intel media driver. Hardware encoding primarily reduces CPU load during compression; Python/Pillow layer rendering remains CPU-bound.
+When `--encoder qsv` or `--encoder vaapi` is selected explicitly, initialization failure for that format is reported instead of silently switching devices. Intel Linux NAS systems should normally retain `--encoder auto`: when QSV initialization fails, the renderer tests VAAPI before falling back to CPU.
+
+Docker and LXC deployments must expose `/dev/dri/renderD128`, grant the container process membership in the `render` group, and install the Intel media driver. The default VAAPI device is `/dev/dri/renderD128` and can be changed with `VAAPI_DEVICE`. If imageio's bundled FFmpeg lacks VAAPI, set `IMAGEIO_FFMPEG_EXE=/usr/bin/ffmpeg` to use the container's system FFmpeg. Hardware encoding primarily reduces CPU load during compression; Python/Pillow layer rendering remains CPU-bound.
 
 ### Interpolation Modes
 

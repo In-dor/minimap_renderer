@@ -92,7 +92,7 @@ python -m render --replay REPLAY
                  [--quality 1-10]
                  [--interpolation {native,blend,motion,duplicate}]
                  [--codec {h264,h265,av1}]
-                 [--encoder {auto,cpu,nvenc,qsv,amf}]
+                 [--encoder {auto,cpu,nvenc,qsv,vaapi,amf}]
 ```
 
 | 参数              |      默认值 | 说明                                                                                        |
@@ -104,11 +104,11 @@ python -m render --replay REPLAY
 | `--quality`       |         `8` | 编码质量，范围 `1-10`；数值越高，画质和文件体积通常越高                                     |
 | `--interpolation` |    `native` | 帧生成方式，见下表                                                                          |
 | `--codec`         |      `h264` | 视频编码格式：兼容性较好的 `h264`、压缩率更高的 `h265` 或 `av1`                             |
-| `--encoder`       |      `auto` | 自动实测并使用可用的硬件编码器，均不可用时回退 CPU；也可指定 `cpu`、`nvenc`、`qsv` 或 `amf` |
+| `--encoder`       |      `auto` | 自动实测并使用可用的硬件编码器，均不可用时回退 CPU；也可指定 `cpu`、`nvenc`、`qsv`、`vaapi` 或 `amf` |
 
 ### 视频编码器
 
-`--codec` 决定视频格式，`--encoder` 决定使用 CPU 或哪一种硬件后端。`auto` 会针对所选格式依次实际测试 NVIDIA NVENC、Intel Quick Sync 和 AMD AMF，而不是只检查 FFmpeg 是否列出了编码器。硬件或驱动不可用时会自动回退对应的 CPU 编码器，并在日志中显示最终选择。
+`--codec` 决定视频格式，`--encoder` 决定使用 CPU 或哪一种硬件后端。`auto` 会针对所选格式依次实际测试 NVIDIA NVENC、Intel Quick Sync、Linux VAAPI 和 AMD AMF，而不是只检查 FFmpeg 是否列出了编码器。硬件或驱动不可用时会自动回退对应的 CPU 编码器，并在日志中显示最终选择。
 
 | 格式   | CPU 回退     | 特点                                           |
 | ------ | ------------ | ---------------------------------------------- |
@@ -116,7 +116,9 @@ python -m render --replay REPLAY
 | `h265` | `libx265`    | 同等画质下文件通常更小，但部分浏览器不支持     |
 | `av1`  | `libaom-av1` | 压缩效率较高；CPU 编码很慢，需要较新的播放环境 |
 
-显式指定 `--encoder qsv` 等模式时，如果该格式的编码器无法初始化，程序会直接报错，不会静默改用其他设备。Intel NAS 主机通常使用 `--encoder qsv`；Docker 或 LXC 环境还需要将 `/dev/dri` 映射到容器，并安装 Intel 媒体驱动。硬件编码主要降低编码阶段的 CPU 占用，Python/Pillow 图层绘制仍由 CPU 完成。
+显式指定 `--encoder qsv` 或 `--encoder vaapi` 时，如果该格式的编码器无法初始化，程序会直接报错，不会静默改用其他设备。Intel Linux NAS 建议保留 `--encoder auto`：QSV 初始化失败后会继续测试 VAAPI，最后才回退 CPU。
+
+Docker 或 LXC 环境需要映射 `/dev/dri/renderD128`、授予容器进程 `render` 组权限，并安装 Intel 媒体驱动。默认 VAAPI 设备是 `/dev/dri/renderD128`，可通过 `VAAPI_DEVICE` 修改。若 imageio 捆绑的 FFmpeg 不含 VAAPI，请设置 `IMAGEIO_FFMPEG_EXE=/usr/bin/ffmpeg` 使用容器内的系统 FFmpeg。硬件编码主要降低编码阶段的 CPU 占用，Python/Pillow 图层绘制仍由 CPU 完成。
 
 ### 插值模式
 

@@ -1,6 +1,7 @@
 from json import JSONDecodeError
 from functools import lru_cache
 from math import ceil
+import os
 from queue import Full, Queue
 import subprocess
 from threading import Thread
@@ -22,7 +23,7 @@ from tqdm import tqdm
 
 Number = Union[int, float]
 INTERPOLATION_MODES = ("native", "blend", "motion", "duplicate")
-ENCODER_MODES = ("auto", "cpu", "nvenc", "qsv", "amf")
+ENCODER_MODES = ("auto", "cpu", "nvenc", "qsv", "vaapi", "amf")
 VIDEO_CODECS = ("h264", "h265", "av1")
 CPU_ENCODERS = {
     "h264": "libx264",
@@ -41,6 +42,12 @@ HARDWARE_ENCODERS = {
         "h264": "h264_qsv",
         "h265": "hevc_qsv",
         "av1": "av1_qsv",
+    },
+    "vaapi": {
+        "label": "VAAPI",
+        "h264": "h264_vaapi",
+        "h265": "hevc_vaapi",
+        "av1": "av1_vaapi",
     },
     "amf": {
         "label": "AMD AMF",
@@ -73,6 +80,8 @@ def _encoder_params(
         ]
     if codec.endswith("_qsv"):
         return ["-preset", "medium", "-global_quality", str(qp)]
+    if codec.endswith("_vaapi"):
+        return ["-rc_mode", "CQP", "-qp", str(qp)]
     return [
         "-quality", "quality", "-rc", "cqp", "-qp_i", str(qp),
         "-qp_p", str(qp),
@@ -89,13 +98,25 @@ def _codec_output_params(video_codec: str) -> list[str]:
 
 @lru_cache(maxsize=None)
 def _probe_video_encoder(
-    codec: str, video_codec: str, size: tuple[int, int]
+    codec: str,
+    video_codec: str,
+    size: tuple[int, int],
+    vaapi_device: Optional[str] = None,
 ) -> bool:
     command = [
         get_ffmpeg_exe(),
         "-hide_banner",
         "-loglevel",
         "error",
+    ]
+    if codec.endswith("_vaapi"):
+        command.extend(
+            [
+                "-vaapi_device",
+                vaapi_device or "/dev/dri/renderD128",
+            ]
+        )
+    command.extend([
         "-f",
         "rawvideo",
         "-pix_fmt",
@@ -109,16 +130,18 @@ def _probe_video_encoder(
         "-frames:v",
         "1",
         "-an",
+    ])
+    if codec.endswith("_vaapi"):
+        command.extend(["-vf", "format=nv12,hwupload"])
+    command.extend([
         "-c:v",
         codec,
-        "-pix_fmt",
-        "yuv420p",
         *_codec_output_params(video_codec),
         *_encoder_params(codec, video_codec, 8),
         "-f",
         "null",
         "-",
-    ]
+    ])
     try:
         result = subprocess.run(
             command,
@@ -154,7 +177,16 @@ def select_video_encoder(
         config = HARDWARE_ENCODERS[candidate]
         codec = config[video_codec]
         label = config["label"]
-        if _probe_video_encoder(codec, video_codec, size):
+        if candidate == "vaapi":
+            available = _probe_video_encoder(
+                codec,
+                video_codec,
+                size,
+                os.getenv("VAAPI_DEVICE", "/dev/dri/renderD128"),
+            )
+        else:
+            available = _probe_video_encoder(codec, video_codec, size)
+        if available:
             return codec, f"{label} ({codec})"
 
     if encoder in ("auto", "cpu"):
@@ -332,6 +364,8 @@ class RendererBase:
             )
             encoder_quality = None
         filters = []
+        input_params = []
+        pix_fmt_out = "yuv420p"
         input_fps = fps if interpolation == "native" else (
             speed if speed is not None else fps
         )
@@ -349,6 +383,14 @@ class RendererBase:
         elif interpolation != "native" and speed is not None and fps < speed:
             filters.append(f"fps={fps}")
 
+        if codec.endswith("_vaapi"):
+            vaapi_device = os.getenv(
+                "VAAPI_DEVICE", "/dev/dri/renderD128"
+            )
+            input_params.extend(["-vaapi_device", vaapi_device])
+            filters.extend(["format=nv12", "hwupload"])
+            pix_fmt_out = "vaapi"
+
         if resolution is not None and self.minimap_bg.size != resolution:
             raise ValueError(
                 "render canvas does not match the requested resolution"
@@ -364,8 +406,10 @@ class RendererBase:
                 quality=encoder_quality,
                 codec=codec,
                 pix_fmt_in="rgb24",
+                pix_fmt_out=pix_fmt_out,
                 macro_block_size=2,
                 size=self.minimap_bg.size,
+                input_params=input_params,
                 output_params=output_params,
             )
         )

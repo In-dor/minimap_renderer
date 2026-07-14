@@ -163,19 +163,19 @@ def test_auto_encoder_selects_first_working_hardware(probe):
 
 @patch(
     "renderer.render._probe_video_encoder",
-    side_effect=[False, False, False, True],
+    side_effect=[False, False, False, False, True],
 )
 def test_auto_encoder_falls_back_to_cpu(probe):
     assert select_video_encoder("auto", "h264") == (
         "libx264",
         "CPU fallback (libx264)",
     )
-    assert probe.call_count == 4
+    assert probe.call_count == 5
 
 
 @patch(
     "renderer.render._probe_video_encoder",
-    side_effect=[False, False, False, True],
+    side_effect=[False, False, False, False, True],
 )
 @pytest.mark.parametrize(
     ("video_codec", "expected"),
@@ -194,6 +194,25 @@ def test_explicit_unavailable_hardware_encoder_fails(probe):
         select_video_encoder("qsv", "h265")
 
 
+@patch.dict(
+    "os.environ", {"VAAPI_DEVICE": "/dev/dri/renderD129"}, clear=False
+)
+@patch("renderer.render._probe_video_encoder")
+def test_auto_encoder_tries_vaapi_after_qsv(probe):
+    probe.side_effect = [False, False, True]
+
+    assert select_video_encoder("auto", "h264") == (
+        "h264_vaapi",
+        "VAAPI (h264_vaapi)",
+    )
+    assert probe.call_args_list[-1].args == (
+        "h264_vaapi",
+        "h264",
+        (1920, 1200),
+        "/dev/dri/renderD129",
+    )
+
+
 @patch("renderer.render._probe_video_encoder", return_value=True)
 @patch("renderer.render.write_frames")
 def test_writer_configures_hardware_encoder(write_frames, probe):
@@ -208,6 +227,78 @@ def test_writer_configures_hardware_encoder(write_frames, probe):
     assert kwargs["quality"] is None
     assert "-global_quality" in kwargs["output_params"]
     assert "-tune" not in kwargs["output_params"]
+
+
+@patch.dict(
+    "os.environ", {"VAAPI_DEVICE": "/dev/dri/renderD129"}, clear=False
+)
+@patch(
+    "renderer.render.select_video_encoder",
+    return_value=("h264_vaapi", "VAAPI (h264_vaapi)"),
+)
+@patch("renderer.render.write_frames")
+def test_writer_configures_vaapi(write_frames, select_encoder):
+    renderer = make_renderer()
+
+    renderer.get_writer(
+        "output.mp4", fps=60, quality=8, encoder="vaapi"
+    )
+
+    kwargs = write_frames.call_args.kwargs
+    assert kwargs["codec"] == "h264_vaapi"
+    assert kwargs["quality"] is None
+    assert kwargs["pix_fmt_out"] == "vaapi"
+    assert kwargs["input_params"] == [
+        "-vaapi_device",
+        "/dev/dri/renderD129",
+    ]
+    filter_value = kwargs["output_params"][
+        kwargs["output_params"].index("-vf") + 1
+    ]
+    assert filter_value == "format=nv12,hwupload"
+    assert "-qp" in kwargs["output_params"]
+
+
+@patch(
+    "renderer.render.select_video_encoder",
+    return_value=("h264_vaapi", "VAAPI (h264_vaapi)"),
+)
+@patch("renderer.render.write_frames")
+def test_writer_applies_interpolation_before_vaapi_upload(
+    write_frames, select_encoder
+):
+    renderer = make_renderer()
+
+    renderer.get_writer(
+        "output.mp4",
+        fps=60,
+        quality=8,
+        speed=15,
+        interpolation="blend",
+        encoder="vaapi",
+    )
+
+    output_params = write_frames.call_args.kwargs["output_params"]
+    filter_value = output_params[output_params.index("-vf") + 1]
+    assert filter_value == "framerate=fps=60,format=nv12,hwupload"
+
+
+@patch("renderer.render.subprocess.run")
+def test_vaapi_probe_binds_device_and_uploads_frames(run):
+    from renderer.render import _probe_video_encoder
+
+    _probe_video_encoder.cache_clear()
+    run.return_value.returncode = 0
+
+    assert _probe_video_encoder(
+        "h264_vaapi", "h264", (1920, 1200), "/dev/dri/renderD129"
+    )
+
+    command = run.call_args.args[0]
+    assert command[command.index("-vaapi_device") + 1] == (
+        "/dev/dri/renderD129"
+    )
+    assert command[command.index("-vf") + 1] == "format=nv12,hwupload"
 
 
 @patch("renderer.render._probe_video_encoder", return_value=True)
