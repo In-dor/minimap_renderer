@@ -24,7 +24,10 @@ ability_type_to_id = {'tacticalTrigger2': 46, 'callFighters': 21, 'smokePlane': 
                       'buffsShift': 31, 'invisibilityExtraBuffConsumable': 40, 'regenerateHealth': 22, 'rls': 12,
                       'subsOxygenRegen': 23, 'circleWave': 32, 'affectedBuffAura': 39, 'fighter': 9, 'crashCrew': 0,
                       'Any': 54, 'hangarBoosters': 5, 'Special': 56, 'speedBoosters': 3, 'sonar': 10,
-                      'subsWaveGunBoost': 24, 'tacticalTrigger6': 50, 'depthCharges': 26, 'tacticalBuffGunBoost': 57, 'tacticalBuffAuxBoost': 58, 'tacticalBuffHeal': 59}
+                      'subsWaveGunBoost': 24, 'tacticalTrigger6': 50, 'depthCharges': 26, 'tacticalBuffGunBoost': 57, 'tacticalBuffAuxBoost': 58, 'tacticalBuffHeal': 59, 'auxTorpBooster': 65, 'tacticalBuffHealConsumableReload': 66}
+# NOTE: 15.7 新增类型的 ID 来源:
+#   auxTorpBooster=65 由 15.7 回放交叉验证确认(使用 typeId 65 的船全部拥有该能力)
+#   tacticalBuffHealConsumableReload=66 按 ConsumableIDsMap 顺序追加推断(60-64 为空缺)
 
 
 # https://gist.github.com/wonderbeyond/d293e7a2af1de4873f2d757edd580288
