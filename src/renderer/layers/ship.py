@@ -32,7 +32,14 @@ UNKNOWN_CONSUMABLE_INDEX_BY_ID: dict[int, str] = {
     # 15.2 replay may emit aid=42 for submarine state consumable,
     # while abilities.json has no id_to_index entry for 42.
     42: "PCY042_SubmarineFourthState",
+    # 15.7 行动模式 (WW2_OP1 等) 会给舰船额外配置消耗品槽位,
+    # 这些槽位不在 GameParams 的 ShipAbilities 中, 但 typeId 全局一致.
+    36: "PCY046_FastDeepRudders",
 }
+
+# 已知类型但游戏未提供图标的 typeId:
+# 渲染时跳过且不告警 (避免对行动模式临时消耗品刷警告).
+KNOWN_NO_ICON_CONSUMABLE_IDS: set[int] = {38}
 
 
 class LayerShipBase(LayerBase):
@@ -338,6 +345,10 @@ class LayerShipBase(LayerBase):
                 for aid, _ in ac.items():
                     index = self._get_consumable_index(params_id, aid)
                     if index is None:
+                        # 已知类型但游戏未提供图标 (如行动模式临时消耗品),
+                        # 静默跳过, 不视为未知能力.
+                        if aid in KNOWN_NO_ICON_CONSUMABLE_IDS:
+                            continue
                         unknown = (params_id, aid)
                         if unknown not in self._unknown_consumables:
                             LOGGER.warning(
