@@ -2,7 +2,7 @@ from json import JSONDecodeError
 from functools import lru_cache
 from math import ceil
 import os
-from queue import Empty, Full, Queue
+from queue import Empty, Full, LifoQueue, Queue
 import subprocess
 from threading import Thread
 from typing import Any, Callable, Optional, Type, Union
@@ -210,7 +210,10 @@ class AsyncFrameWriter:
     def __init__(self, writer, queue_size: int = 8):
         self._writer = writer
         self._queue = Queue(maxsize=queue_size)
-        self._pool = Queue()
+        # LIFO: reuse the most recently returned frame buffer first. Reusing it
+        # while its interval version is still current lets the renderer skip the
+        # full-canvas interval repaint that a FIFO rotation would force.
+        self._pool = LifoQueue()
         self._error = None
         self._started = False
         self._closed = False
