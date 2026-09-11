@@ -75,7 +75,14 @@ class LayerShipBase(LayerBase):
         self._owner = self._replay_data.player_info[self._replay_data.owner_id]
         self._owner_view_range = self._get_max_dist()
         self._deads: list[int] = []
-        self._image_dead = Image.new(renderer.minimap_fg.mode, renderer.minimap_fg.size)
+        self._image_dead = Image.new(
+            renderer.minimap_fg.mode, renderer.minimap_fg.size
+        )
+        # Bounding box of the dead-ship overlay. Compositing the full overlay
+        # on every frame after the first death is a major render cost, so the
+        # cached box lets us composite only the region that actually contains
+        # sprites while keeping the exact same pixels.
+        self._dead_bbox: Optional[tuple[int, int, int, int]] = None
 
     @staticmethod
     def _mapping_get(mapping: dict, aid: int):
@@ -145,8 +152,12 @@ class LayerShipBase(LayerBase):
         events = self._replay_data.events
         owner_vehicle = events[game_time].evt_vehicle[self._owner.ship_id]
 
-        if self._deads:
-            image.alpha_composite(self._image_dead)
+        if self._dead_bbox is not None:
+            image.alpha_composite(
+                self._image_dead,
+                dest=self._dead_bbox[:2],
+                source=self._dead_bbox,
+            )
 
         for vehicle in sorted(
             events[game_time].evt_vehicle.values(),
@@ -273,18 +284,34 @@ class LayerShipBase(LayerBase):
                         )
             if not vehicle.is_alive and vehicle.vehicle_id not in self._deads:
                 self._deads.append(vehicle.vehicle_id)
-                self._image_dead.alpha_composite(
-                    icon,
-                    dest=(
-                        x - round(icon.width / 2),
-                        y - round(icon.height / 2),
-                    ),
-                )
+                dest_x = x - round(icon.width / 2)
+                dest_y = y - round(icon.height / 2)
+                self._image_dead.alpha_composite(icon, dest=(dest_x, dest_y))
+                self._expand_dead_bbox(dest_x, dest_y, icon.size)
 
             image.alpha_composite(
                 icon,
                 dest=(x - round(icon.width / 2), y - round(icon.height / 2)),
             )
+
+    def _expand_dead_bbox(self, x: int, y: int, size: tuple[int, int]) -> None:
+        """Expands the cached dead-overlay bounding box with a sprite rect."""
+        left = max(0, x)
+        top = max(0, y)
+        right = min(self._image_dead.width, x + size[0])
+        bottom = min(self._image_dead.height, y + size[1])
+        if right <= left or bottom <= top:
+            return
+        if self._dead_bbox is None:
+            self._dead_bbox = (left, top, right, bottom)
+            return
+        bl, bt, br, bb = self._dead_bbox
+        self._dead_bbox = (
+            min(bl, left),
+            min(bt, top),
+            max(br, right),
+            max(bb, bottom),
+        )
 
     def _get_ship_holder(
         self,

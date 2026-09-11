@@ -859,10 +859,11 @@ class Renderer(RendererBase):
 
             return minimap_img, minimap_bg
 
-        def draw_interval_base(game_time):
-            minimap_img = Image.new("RGBA", self.minimap_fg.size)
+        def draw_interval_base(game_time, minimap_img, minimap_bg):
+            # Reuse the preallocated interval buffers instead of allocating two
+            # full-size images (and zero-filling them) for every interval; both
+            # are fully overwritten by the pastes below.
             minimap_img.paste(self.minimap_fg, (0, 0))
-            minimap_bg = Image.new("RGBA", self.output_size)
             minimap_bg.paste(self.minimap_bg, (0, 0))
 
             if not self.is_operations:
@@ -904,8 +905,8 @@ class Renderer(RendererBase):
                 else timeline
             )
             has_active_interval = False
-            interval_map = None
-            interval_output = None
+            interval_map = Image.new("RGBA", self.minimap_fg.size)
+            interval_output = Image.new("RGBA", self.output_size)
             interval_version = 0
             dynamic_map = Image.new("RGBA", self.minimap_fg.size)
 
@@ -927,8 +928,8 @@ class Renderer(RendererBase):
                     )
                     try:
                         if first:
-                            interval_map, interval_output = draw_interval_base(
-                                sample_key
+                            draw_interval_base(
+                                sample_key, interval_map, interval_output
                             )
                             interval_version += 1
                         dynamic_map.paste(interval_map, (0, 0))
