@@ -2,7 +2,7 @@ import os
 import pytest
 from renderer.report import generate_battle_report, parse_replay_report
 
-DEFAULT_REPLAY_PATH = os.path.join(os.path.dirname(__file__), "..", "replays", "1580.wowsreplay")
+DEFAULT_REPLAY_PATH = os.path.join(os.path.dirname(__file__), "..", "replays", "1590.wowsreplay")
 CUSTOM_REPLAY_PATH = r"F:\[工具]\minimap_renderer\20260907_123622_PWSB010-Thor_58_RidgeNew.wowsreplay"
 REPLAY_PATH = CUSTOM_REPLAY_PATH if os.path.exists(CUSTOM_REPLAY_PATH) else DEFAULT_REPLAY_PATH
 

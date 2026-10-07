@@ -6,7 +6,10 @@ import zlib
 from io import BytesIO
 from typing import NamedTuple
 
-from Cryptodome.Cipher import Blowfish
+try:
+    from Cryptodome.Cipher import Blowfish
+except ImportError:
+    from Crypto.Cipher import Blowfish
 
 BASE_DIR = os.path.dirname(__file__)
 WOWS_BLOWFISH_KEY = b''.join([b'\x29', b'\xB7', b'\xC9', b'\x09', b'\x38', b'\x3F', b'\x84', b'\x88',

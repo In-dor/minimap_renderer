@@ -1,4 +1,3 @@
-import imp
 from .generators.ships import create_ships_data
 from .generators.plane import create_planes_data
 from .generators.projectile import create_projectiles_data
