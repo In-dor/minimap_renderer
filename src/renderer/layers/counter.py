@@ -93,7 +93,7 @@ class LayerCounterBase(LayerBase):
             if val := self._counter_numbers.get(name, None):
                 l_damage, l_image = val
                 if l_damage == dmg:
-                    x_pos = image.width - l_image.width - self._renderer.px(30)
+                    x_pos = image.width - l_image.width - self._renderer.px(24)
                     image.alpha_composite(l_image, (x_pos, y_pos))
                     continue
 
@@ -101,7 +101,7 @@ class LayerCounterBase(LayerBase):
             fw, fh = font.getbbox(value)[2:]
             base = Image.new("RGBA", (fw, fh))
             draw = ImageDraw.Draw(base)
-            x_pos = image.width - base.width - self._renderer.px(30)
+            x_pos = image.width - base.width - self._renderer.px(24)
             draw.text((0, 0), value, COUNTER_COLOR, font)
             self._counter_numbers[name] = [dmg, base.copy()]
             image.alpha_composite(base, (x_pos, y_pos))

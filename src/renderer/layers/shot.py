@@ -11,10 +11,10 @@ from PIL import ImageDraw, Image, ImageColor
 
 SHELL_COLORS = {
     "HE": (247, 167, 47),
-    "AP": (222, 222, 222),
-    "CS": (255, 48, 48),
+    "AP": (200, 244, 255),   # #c8f4ff crisp ice cyan-white for high contrast
+    "CS": (255, 92, 200),    # #ff5cc8 distinct bright magenta for SAP
 }
-SECONDARY_SHELL_COLORS = {k: (*v, 85) for k, v in SHELL_COLORS.items()}
+SECONDARY_SHELL_COLORS = {k: (*v, 95) for k, v in SHELL_COLORS.items()}
 OPAQUE_SHELL_COLORS = {k: (*v, 255) for k, v in SHELL_COLORS.items()}
 
 
@@ -158,11 +158,12 @@ class LayerShotBase(LayerBase):
                     else:
                         base_c = COLORS_NORMAL[self._relations[cid]]
 
+                    rgb = ImageColor.getrgb(base_c)
                     if is_secondary:
                         has_secondary = True
-                        color = (*base_c[:3], 85)
+                        color = (*rgb[:3], 85)
                     else:
-                        color = base_c
+                        color = (*rgb[:3], 255)
                 else:
                     shell_type = self._projectiles_data[params_id]
                     if is_secondary:

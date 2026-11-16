@@ -27,6 +27,7 @@ class CustomReader(ReplayReader):
     def __init__(self, fp: BinaryIO, dump_binary=False):
         self._dump_binary_data = dump_binary
         self._fp = fp
+        self._replay_path = getattr(fp, "name", "<stream>")
         self._type = "wowsreplay"
 
     def get_replay_data(self) -> ReplayInfo:
@@ -85,12 +86,12 @@ class ReplayParser(object):
         self._is_strict_mode = strict
         self._reader = CustomReader(fp)
         self._raw_data_output = raw_data_output
-        logging.basicConfig(level=logging_level)
-        root = logging.getLogger()
-        root.setLevel(logging.ERROR)
+        self._logging_level = logging_level
+        self._last_post_battle = None
 
     def get_info(self):
         replay = self._reader.get_replay_data()
+        self._last_post_battle = None
 
         error = None
         try:
@@ -109,6 +110,7 @@ class ReplayParser(object):
             open=replay.engine_data,
             extra_data=replay.extra_data,
             hidden=hidden_data,
+            post_battle=self._last_post_battle,
             error=error,
         )
 
@@ -136,7 +138,10 @@ class ReplayParser(object):
             with open(self._raw_data_output, "wb") as fp:
                 fp.write(replay.decrypted_data)
 
-        player.play(replay.decrypted_data, self._is_strict_mode)
+        try:
+            player.play(replay.decrypted_data, self._is_strict_mode)
+        finally:
+            self._last_post_battle = getattr(player, "post_battle", None)
         return player.get_info()
 
 

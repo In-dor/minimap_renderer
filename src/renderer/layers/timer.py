@@ -40,14 +40,16 @@ class LayerTimerBase(LayerBase):
         color = WARNING_COLOR if minutes <= 2 else NORMAL_COLOR
 
         draw.text(
-            self._renderer.xy((10, -5)),
+            self._renderer.xy((22, 15)),
             f"{minutes:02d}",
             fill=color,
             font=self._font,
+            anchor="mm",
         )
         draw.text(
-            self._renderer.xy((10, 17)),
+            self._renderer.xy((22, 36)),
             f"{seconds:02d}",
             fill=color,
             font=self._font,
+            anchor="mm",
         )

@@ -5,8 +5,6 @@ from importlib.resources import open_text, open_binary, is_resource
 from PIL import Image
 from typing import Optional
 from PIL import ImageFont
-from langdetect import detect, LangDetectException
-from hanzidentifier import has_chinese
 from renderer.data import Message
 
 class ResourceManager:
@@ -99,7 +97,7 @@ class ResourceManager:
         return self._select_font_by_text(text, size)
 
     def _select_font_by_text(self, text: str, size: int) -> ImageFont.FreeTypeFont:
-        """Select the font based on the text language.
+        """Select the font based on deterministic Unicode character ranges.
 
         Args:
             text (str): The text.
@@ -107,23 +105,28 @@ class ResourceManager:
         Returns:
             ImageFont.FreeTypeFont: The font.
         """
-        try:
-            language = detect(text)  # this can detect Chinese as Korean
-            if has_chinese(text):
-                return self.load_font(
-                    filename="warhelios_bold_zh.ttf", size=size
-                )
+        has_kana = False
+        has_hangul = False
+        has_cjk = False
+        for ch in text:
+            if "\u3040" <= ch <= "\u30ff" or "\u31f0" <= ch <= "\u31ff":
+                has_kana = True
+                break
+            if (
+                "\uac00" <= ch <= "\ud7af"
+                or "\u1100" <= ch <= "\u11ff"
+                or "\u3130" <= ch <= "\u318f"
+            ):
+                has_hangul = True
+            elif "\u4e00" <= ch <= "\u9fff" or "\u3400" <= ch <= "\u4dbf":
+                has_cjk = True
 
-            if language == "ja":
-                return self.load_font(
-                    filename="warhelios_bold_jp.ttf", size=size
-                )
-            elif language == "ko":
-                return self.load_font(
-                    filename="warhelios_bold_ko.ttf", size=size
-                )
-        except LangDetectException:
-            LOGGER.warn(f"Unable to detect language of message \"{text}\"")
+        if has_kana:
+            return self.load_font(filename="warhelios_bold_jp.ttf", size=size)
+        if has_hangul:
+            return self.load_font(filename="warhelios_bold_ko.ttf", size=size)
+        if has_cjk:
+            return self.load_font(filename="warhelios_bold_zh.ttf", size=size)
 
         # fallback to the default font
         return self.load_default_font(size=size)

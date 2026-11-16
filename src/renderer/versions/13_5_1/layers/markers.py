@@ -77,17 +77,28 @@ class LayerMarkersBase(LayerBase):
                     color = COLORS_NORMAL[vehicle.relation]
 
                 for aid in {10, 12}.intersection(ac):
-                    name = f"{id_to_index[aid]}.{id_to_subtype[aid]}"
+                    idx_val = id_to_index.get(aid, id_to_index.get(str(aid)))
+                    sub_val = id_to_subtype.get(aid, id_to_subtype.get(str(aid)))
+                    if idx_val is None or sub_val is None:
+                        continue
+                    name = f"{idx_val}.{sub_val}"
+                    if name not in abilities or "distShip" not in abilities[name]:
+                        continue
                     dist_ship_bw = abilities[name]["distShip"]
-                    r = round(self._renderer.get_scaled_r(dist_ship_bw) / 2)
-                    w = h = r * 4
+                    w = h = max(2, round(self._renderer.get_scaled_r(dist_ship_bw) * 2))
 
                     if aid == 10:
                         per = dist_ship_bw / 200
-                        dash = round(30 * per)
-                        shape = self._draw_arc_aa((w, h), color, dash=dash)
+                        dash = max(8, round(30 * per))
+                        shape = self._draw_arc_aa(
+                            (w, h), color, dash=dash,
+                            width=max(1, self._renderer.px(2)),
+                        )
                     else:
-                        shape = self._draw_ellipse_aa((w, h), color)
+                        shape = self._draw_ellipse_aa(
+                            (w, h), color,
+                            width=max(1, self._renderer.px(2)),
+                        )
                     image.alpha_composite(
                         shape, (x - shape.width // 2, y - shape.height // 2)
                     )
@@ -131,8 +142,7 @@ class LayerMarkersBase(LayerBase):
         base = Image.new("RGBA", (w, h))
         draw = ImageDraw.Draw(base)
 
-        for _ in range(36):
-            draw.ellipse([(0, 0), (w - 1, h - 1)], outline=color, width=width)
+        draw.ellipse([(0, 0), (w - 1, h - 1)], outline=color, width=width)
 
         shape_image = base.resize(size, resample=Image.Resampling.LANCZOS)
         return shape_image

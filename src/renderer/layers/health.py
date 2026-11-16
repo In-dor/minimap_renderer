@@ -219,7 +219,22 @@ class LayerHealthBase(LayerBase):
         th = Image.new("RGBA", (bg_bar.width, max(hp_h, n_h, hp_c_h)))
         th_draw = ImageDraw.Draw(th)
 
-        th_draw.text((0, 0), info["name"], fill="white", font=self._font)
+        ship_label = info["name"]
+        max_name_w = max(1, th.width - (hp_w + hp_c_w) - self._renderer.px(6))
+        if n_w > max_name_w:
+            low, high, best = 0, len(ship_label), 0
+            while low <= high:
+                mid = (low + high) // 2
+                cand = f"{ship_label[:mid]}..."
+                cw = self._font.getbbox(cand)[2]
+                if cw <= max_name_w:
+                    best = mid
+                    low = mid + 1
+                else:
+                    high = mid - 1
+            ship_label = f"{ship_label[:best]}..."
+
+        th_draw.text((0, 0), ship_label, fill="white", font=self._font)
         th_draw.text(
             (th.width - (hp_w + hp_c_w), 0),
             hp_current,
@@ -253,8 +268,8 @@ class LayerHealthBase(LayerBase):
                 FLOOD_NODE_POSITIONS[flood_nodes],
             )
 
-        image.paste(th, (px, self._renderer.px(205)), th)
-        image.paste(bg_bar, (px, self._renderer.px(145)), bg_bar)
+        image.alpha_composite(th, (px, self._renderer.px(205)))
+        image.alpha_composite(bg_bar, (px, self._renderer.px(145)))
 
     def _draw_nodes(
         self,

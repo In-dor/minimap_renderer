@@ -139,7 +139,11 @@ if __name__ == "__main__":
     if not namespace.no_report:
         LOGGER.info("Generating 2.4K Ultra-HD battle report...")
         try:
-            generate_battle_report(namespace.replay, report_output_path)
+            generate_battle_report(
+                namespace.replay,
+                report_output_path,
+                replay_info=replay_info,
+            )
             LOGGER.info(f"Battle report saved to: {report_output_path}")
         except Exception as e:
             LOGGER.warning(f"Failed to generate battle report: {e}")

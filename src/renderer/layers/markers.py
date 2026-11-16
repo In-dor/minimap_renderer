@@ -44,7 +44,7 @@ class LayerMarkersBase(LayerBase):
         for i in self._renderer.conman.active_consumables.values():
             target_ids.update(i)
 
-        if not target_ids.intersection({11, 13}):
+        if not target_ids.intersection({10, 11, 12, 13}):
             return
 
         for vehicle in sorted(
@@ -72,20 +72,20 @@ class LayerMarkersBase(LayerBase):
                 else:
                     color = COLORS_NORMAL[vehicle.relation]
 
-                for aid in {11, 13}.intersection(ac):
-                    str_aid = str(aid)
-                    if str_aid not in id_to_index or str_aid not in id_to_subtype:
+                for aid in {10, 11, 12, 13}.intersection(ac):
+                    idx_val = id_to_index.get(aid, id_to_index.get(str(aid)))
+                    sub_val = id_to_subtype.get(aid, id_to_subtype.get(str(aid)))
+                    if idx_val is None or sub_val is None:
                         continue
-                    name = f"{id_to_index[str_aid]}.{id_to_subtype[str_aid]}"
+                    name = f"{idx_val}.{sub_val}"
                     if name not in abilities or "distShip" not in abilities[name]:
                         continue
                     dist_ship_bw = abilities[name]["distShip"]
-                    r = round(self._renderer.get_scaled_r(dist_ship_bw) / 2)
-                    w = h = r * 4
+                    w = h = max(2, round(self._renderer.get_scaled_r(dist_ship_bw) * 2))
 
-                    if aid == 11:
+                    if "Sonar" in idx_val or aid in (10, 11):
                         per = dist_ship_bw / 200
-                        dash = round(30 * per)
+                        dash = max(8, round(30 * per))
                         shape = self._draw_arc_aa(
                             (w, h), color, dash=dash,
                             width=max(1, self._renderer.px(2)),
@@ -138,8 +138,7 @@ class LayerMarkersBase(LayerBase):
         base = Image.new("RGBA", (w, h))
         draw = ImageDraw.Draw(base)
 
-        for _ in range(36):
-            draw.ellipse([(0, 0), (w - 1, h - 1)], outline=color, width=width)
+        draw.ellipse([(0, 0), (w - 1, h - 1)], outline=color, width=width)
 
         shape_image = base.resize(size, resample=Image.Resampling.LANCZOS)
         return shape_image

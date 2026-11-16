@@ -116,7 +116,9 @@ class LayerCaptureBase(LayerBase):
         """
         relation_to_str = {-1: "neutral", 0: "ally", 1: "enemy"}
         filename = f"cap_{relation_to_str[relation]}.png"
-        return self._renderer.resman.load_image(filename, size=size)
+        return self._renderer.resman.load_image(
+            filename, size=size, readonly=False
+        )
 
     @lru_cache
     def _get_progress(self, from_color: str, to_color: str, percent: float):

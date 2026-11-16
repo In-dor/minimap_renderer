@@ -23,8 +23,14 @@ class LayerChatBase(LayerBase):
         self._font = None # to be decided per message
         self._players = self._replay_data.player_info
         self._generated_lines: dict[int, Image.Image] = {}
-        self._messages: list[Message] = []
-        # self._lines: dict[int, Image.Image] = {}
+        self._messages: list[tuple[int, Message]] = []
+        self._line_cache: dict[tuple[Optional[int], Message], Image.Image] = {}
+        int_keys = [k for k in self._replay_data.events if isinstance(k, int)]
+        self._start_time_left = (
+            self._replay_data.events[min(int_keys)].time_left
+            if int_keys
+            else 1200
+        )
 
     def draw(self, game_time: int, image: Image.Image):
         """Draw the in-game chat to the image.
@@ -33,44 +39,44 @@ class LayerChatBase(LayerBase):
             game_time (int): The game time.
             image (Image.Image): The image where the chat will be pasted to,
         """
-        evt_messages = self._replay_data.events[game_time].evt_chat
-        self._messages.extend(evt_messages)
+        evt = self._replay_data.events[game_time]
+        if evt.evt_chat:
+            if isinstance(game_time, int):
+                ts_sec = max(0, game_time)
+            else:
+                ts_sec = max(0, self._start_time_left - evt.time_left)
+            for msg in evt.evt_chat:
+                self._messages.append((ts_sec, msg))
 
-        x_pos = self._renderer.px(805)
-        y_pos = image.height - self._renderer.px(5)
+        x_pos = self._renderer.px(818)
+        y_pos = self._renderer.px(840)
+        min_y = self._renderer.px(750)
 
-        for message in reversed(self._messages[-5:]):
-
-            line = self.build(message)
+        for ts_sec, message in reversed(self._messages[-5:]):
+            line = self.build(message, ts_sec)
             _, l_h = line.size
             y_pos -= l_h
+            if y_pos < min_y:
+                break
             image.alpha_composite(line, (x_pos, y_pos))
 
-    @lru_cache
-    def build(self, message: Message) -> Image.Image:
+    def build(
+        self, message: Message, timestamp_sec: Optional[int] = None
+    ) -> Image.Image:
         """Builds the line message as an image.
 
         Args:
             message (Message): The message.
+            timestamp_sec (Optional[int]): Elapsed battle seconds for [MM:SS].
 
         Returns:
             Image.Image: Image of the chat message.
         """
+        cache_key = (timestamp_sec, message)
+        if cached := self._line_cache.get(cache_key):
+            return cached
 
-        # m_hash = hash(message) & 1000000000
-
-        # if image := self._lines.get(m_hash, None):
-        #     return image
-
-        self._font = self._renderer.resman.load_font_with_text(
-            message.message, size=12
-        )
-        base = Image.new("RGBA", self._renderer.xy((560, 17)))
-        draw = ImageDraw.Draw(base)
         player = self._players[message.player_id]
-
-        x_pos = 0
-
         if self._renderer.anon and player.clan_tag:
             clan_tag = "#" * len(player.clan_tag)
         elif player.clan_tag:
@@ -78,11 +84,38 @@ class LayerChatBase(LayerBase):
         else:
             clan_tag = ""
 
+        if self._renderer.anon:
+            name = self._renderer.usernames[player.id]
+        else:
+            name = player.name
+
+        self._font = self._renderer.resman.load_font_with_text(
+            f"{clan_tag}{name}{message.message}", size=12
+        )
+        line_h = self._renderer.px(18)
+        max_w = self._renderer.px(518)
+        base = Image.new("RGBA", (max_w, line_h))
+        draw = ImageDraw.Draw(base)
+
+        sample_text = f"[00:00] [{clan_tag}]{name}: {message.message}"
+        sb = self._font.getbbox(sample_text)
+        draw_y = (line_h - (sb[3] - sb[1])) // 2 - sb[1]
+
+        x_pos = 0
+        if timestamp_sec is not None:
+            ts_str = f"[{timestamp_sec // 60:02d}:{timestamp_sec % 60:02d}] "
+            ts_b = self._font.getbbox(ts_str)
+            ts_w = ts_b[2] - ts_b[0]
+            draw.text((x_pos, draw_y), ts_str, "#9fb2c8", self._font)
+            x_pos += ts_w
+
         if player.clan_tag:
-            c_w, _ = self._font.getbbox(f"[{clan_tag}]")[2:]
+            clan_str = f"[{clan_tag}]"
+            c_b = self._font.getbbox(clan_str)
+            c_w = c_b[2] - c_b[0]
             draw.text(
-                (x_pos, 0),
-                f"[{clan_tag}]",
+                (x_pos, draw_y),
+                clan_str,
                 self.unpack_color(player.clan_color),
                 self._font,
             )
@@ -94,35 +127,39 @@ class LayerChatBase(LayerBase):
             else COLORS_NORMAL[1]
         )
 
-        if self._renderer.anon:
-            name = self._renderer.usernames[player.id]
-        else:
-            name = player.name
-
-        n_w, _ = self._font.getbbox(f"{name}: ")[2:]
-        draw.text((x_pos, 0), f"{name}: ", n_color, self._font)
+        name_str = f"{name}: "
+        n_b = self._font.getbbox(name_str)
+        n_w = n_b[2] - n_b[0]
+        draw.text((x_pos, draw_y), name_str, n_color, self._font)
         x_pos += n_w
 
         if message.namespace == "battle_common":
             m_color = "white"
+        elif message.namespace == "battle_prebattle":
+            m_color = "#ffd24c"
         else:
             m_color = n_color
 
-        m_w, _ = self._font.getbbox(message.message)[2:]
         text = message.message
+        mb = self._font.getbbox(text)
+        m_w = mb[2] - mb[0]
+        avail_w = max(0, max_w - x_pos)
 
-        if x_pos + m_w + self._renderer.px(805) > self._renderer.px(1330):
-            for i in range(1, len(message.message)):
-                n_t = f"{message.message[:-i]}..."
-                m_w, _ = self._font.getbbox(n_t)[2:]
+        if m_w > avail_w and text:
+            low, high, best = 0, len(text), 0
+            while low <= high:
+                mid = (low + high) // 2
+                cand = f"{text[:mid]}..."
+                cb = self._font.getbbox(cand)
+                if (cb[2] - cb[0]) <= avail_w:
+                    best = mid
+                    low = mid + 1
+                else:
+                    high = mid - 1
+            text = f"{text[:best]}..."
 
-                if x_pos + m_w + self._renderer.px(805) <= self._renderer.px(1330):
-                    text = n_t
-                    break
-
-        draw.text((x_pos, 0), text, m_color, self._font)
-        x_pos += m_w
-        # self._lines[m_hash] = base
+        draw.text((x_pos, draw_y), text, m_color, self._font)
+        self._line_cache[cache_key] = base
         return base
 
     @staticmethod

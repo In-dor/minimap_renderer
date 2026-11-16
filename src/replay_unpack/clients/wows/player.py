@@ -1,9 +1,12 @@
 # coding=utf-8
+import json
 import logging
 import struct
 from io import BytesIO
+from typing import Any, Optional
 
 from replay_unpack.core import Entity
+from replay_unpack.core.network.net_packet import NetPacket
 from replay_unpack.core.network.player import ControlledPlayerBase
 from .helper import get_definitions, get_controller
 from .network.packets import (
@@ -24,6 +27,73 @@ from .network.packets import (
 
 
 class ReplayPlayer(ControlledPlayerBase):
+    def __init__(self, version):
+        super().__init__(version)
+        self._current_packet_time: float = 0.0
+        self._battle_start_time: Optional[float] = None
+        self._quick_commands: list[tuple[float, int, bytes]] = []
+        self._post_battle: Optional[dict[str, Any]] = None
+        Entity.subscribe_method_call(
+            "Avatar", "receive_CommonCMD", self._on_common_cmd
+        )
+
+    @property
+    def post_battle(self) -> Optional[dict[str, Any]]:
+        return self._post_battle
+
+    @property
+    def quick_commands(self) -> list[tuple[float, int, bytes]]:
+        return self._quick_commands
+
+    def _on_common_cmd(self, entity: Entity, *args, **kwargs):
+        cmd_blob = kwargs.get("command")
+        if cmd_blob is None and len(args) > 1:
+            cmd_blob = args[1]
+        p_id = kwargs.get("playerId")
+        if p_id is None and len(args) > 0:
+            p_id = args[0]
+        if cmd_blob is not None:
+            self._quick_commands.append(
+                (self._current_packet_time, int(p_id or 0), bytes(cmd_blob))
+            )
+
+    def get_info(self):
+        info = super().get_info()
+        if isinstance(info, dict):
+            info["quick_commands"] = list(self._quick_commands)
+            info["battle_start_time"] = self._battle_start_time
+        return info
+
+    def _deserialize_packet(self, packet: NetPacket):
+        if packet.type == 0x22 and packet.size > 1024:
+            raw = packet.raw_data
+            pos = raw.tell()
+            hdr = raw.read(4)
+            if len(hdr) == 4:
+                jlen = struct.unpack("<I", hdr)[0]
+                if 0 < jlen <= packet.size - 4:
+                    payload = raw.read(jlen)
+                    if payload.startswith(b"{"):
+                        try:
+                            self._post_battle = json.loads(
+                                payload.decode("utf-8", errors="replace")
+                            )
+                            return None
+                        except Exception:
+                            pass
+            raw.seek(pos)
+
+        if packet.type in self._mapping:
+            return self._mapping[packet.type](packet.raw_data)
+
+        if logging.getLogger().isEnabledFor(logging.DEBUG) and packet.size <= 1024:
+            logging.debug(
+                "unknown packet %s %s",
+                hex(packet.type),
+                str(packet.raw_data.read().hex()),
+            )
+        return None
+
     def _get_definitions(self, version):
         try:
             return get_definitions("_".join(version[:4]))
@@ -44,7 +114,13 @@ class ReplayPlayer(ControlledPlayerBase):
             return PACKETS_MAPPING
 
     def _process_packet(self, packet, t: float):
+        self._current_packet_time = t
         self._battle_controller.set_packet_time(t)
+        if (
+            self._battle_start_time is None
+            and getattr(self._battle_controller, "_battle_stage", -1) == 0
+        ):
+            self._battle_start_time = t
 
         if isinstance(packet, Version):
             self._battle_controller._version = packet.version

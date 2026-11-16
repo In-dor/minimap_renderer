@@ -3,13 +3,14 @@ from functools import lru_cache
 from math import ceil
 import os
 from queue import Empty, Full, LifoQueue, Queue
+import re
 import subprocess
 from threading import Thread
 from typing import Any, Callable, Optional, Type, Union
 from importlib import import_module
 from renderer.base import LayerBase
 
-from renderer.const import LAYERS
+from renderer.const import COLORS_NORMAL, LAYERS, MAP_NAMES, TIER_ROMAN
 from renderer.data import ReplayData
 from renderer.utils import draw_grid, LOGGER
 from renderer.resman import ResourceManager
@@ -62,13 +63,15 @@ _WRITER_STOP = object()
 def _encoder_params(
     codec: str, video_codec: str, quality: int
 ) -> list[str]:
-    qp = max(1, round((10 - quality) * 5.1))
+    # Calibrated quantization curve for flat tactical UI animation:
+    # quality=8 maps to CRF/CQ 20 (crisp text/lines without near-lossless bloat).
+    qp = max(12, min(51, round(52 - quality * 4)))
     if codec == "libx264":
-        return []
+        return ["-crf", str(qp)]
     if codec == "libx265":
         return ["-preset", "medium", "-crf", str(qp)]
     if codec == "libaom-av1":
-        av1_crf = max(0, round((10 - quality) * 6.3))
+        av1_crf = max(14, min(63, round(60 - quality * 4.5)))
         return [
             "-strict", "-2", "-cpu-used", "6", "-row-mt", "1",
             "-crf", str(av1_crf), "-b:v", "0",
@@ -133,6 +136,8 @@ def _probe_video_encoder(
     ])
     if codec.endswith("_vaapi"):
         command.extend(["-vf", "format=nv12,hwupload"])
+    else:
+        command.extend(["-pix_fmt", "yuv420p"])
     command.extend([
         "-c:v",
         codec,
@@ -386,12 +391,10 @@ class RendererBase:
         ]
         if codec == "libx264":
             output_params.extend(["-tune", "animation"])
-            encoder_quality = quality
-        else:
-            output_params.extend(
-                _encoder_params(codec, video_codec, quality)
-            )
-            encoder_quality = None
+        output_params.extend(
+            _encoder_params(codec, video_codec, quality)
+        )
+        encoder_quality = None
         filters = []
         input_params = []
         pix_fmt_out = "yuv420p"
@@ -474,7 +477,40 @@ class RendererBase:
             map_water = self.resman.load_image("minimap_water.png", path=path)
             size = self.output_size
 
-            self.minimap_bg = map_water.copy().resize(size)
+            self.bg_color = map_water.getpixel((10, 10))
+            bg_r = max(6, min(20, round(self.bg_color[0] * 0.35 + 6)))
+            bg_g = max(14, min(36, round(self.bg_color[1] * 0.35 + 11)))
+            bg_b = max(24, min(52, round(self.bg_color[2] * 0.35 + 18)))
+
+            # Build deep-sea tactical canvas without 16:10 stretching of square water
+            self.minimap_bg = Image.new("RGBA", size, (bg_r, bg_g, bg_b, 255))
+            bg_overlay = Image.new("RGBA", size, (0, 0, 0, 0))
+            bg_draw = ImageDraw.Draw(bg_overlay)
+            # Subtle top score/timer header strip cleanly above 1-10 grid labels
+            bg_draw.rectangle(
+                [(0, 0), (self.px(800), self.px(60))],
+                fill=(max(4, bg_r - 2), max(10, bg_g - 3), max(18, bg_b - 4), 215),
+            )
+            bg_draw.line(
+                [(0, self.px(60)), (self.px(800), self.px(60))],
+                fill=(66, 118, 164, 110),
+                width=max(1, self.px(1)),
+            )
+            # Subtle minimap frame outline
+            mx0 = self.map_origin[0] - max(1, self.px(1))
+            my0 = self.map_origin[1] - max(1, self.px(1))
+            mx1 = self.map_origin[0] + self.minimap_size
+            my1 = min(size[1] - 1, self.map_origin[1] + self.minimap_size)
+            bg_draw.rectangle(
+                [(mx0, my0), (mx1, my1)],
+                outline=(72, 124, 168, 130),
+                width=max(1, self.px(1)),
+            )
+
+            if size[0] >= self.px(1360):
+                self._draw_hud_cards(bg_overlay, bg_draw)
+
+            self.minimap_bg = Image.alpha_composite(self.minimap_bg, bg_overlay)
             self.minimap_bg.paste(
                 map_legends,
                 (
@@ -484,7 +520,6 @@ class RendererBase:
                 mask=map_legends,
             )
 
-            self.bg_color = map_water.getpixel((10, 10))
             map_water = Image.alpha_composite(
                 map_water,
                 draw_grid(self.minimap_size, max(1, self.px(1))),
@@ -492,6 +527,283 @@ class RendererBase:
             self.minimap_fg = Image.alpha_composite(map_water, map_land)
         except (FileNotFoundError, ModuleNotFoundError) as e:
             raise MapLoadError from e
+
+    def _draw_hud_cards(
+        self, overlay: Image.Image, draw: ImageDraw.ImageDraw
+    ) -> None:
+        """Draws translucent deep-sea tactical cards for the right HUD column."""
+        card_fill = (11, 24, 40, 214)
+        card_outline = (74, 134, 184, 150)
+        divider_color = (64, 116, 162, 110)
+        radius = max(4, self.px(10))
+        border_w = max(1, self.px(1))
+        x0, x1 = self.px(806), self.px(1350)
+
+        # Card 1: Match Meta & Header
+        draw.rounded_rectangle(
+            [(x0, self.px(10)), (x1, self.px(122))],
+            radius=radius,
+            fill=card_fill,
+            outline=card_outline,
+            width=border_w,
+        )
+        # Card 2: Ship Status, Counters & Ribbons/Achievements
+        draw.rounded_rectangle(
+            [(x0, self.px(132)), (x1, self.px(508))],
+            radius=radius,
+            fill=card_fill,
+            outline=card_outline,
+            width=border_w,
+        )
+        draw.line(
+            [self.xy((1090, 144)), self.xy((1090, 236))],
+            fill=divider_color,
+            width=border_w,
+        )
+        draw.line(
+            [self.xy((820, 247)), self.xy((1336, 247))],
+            fill=divider_color,
+            width=border_w,
+        )
+        # Card 3: Kill Feed & Battle Chat
+        draw.rounded_rectangle(
+            [(x0, self.px(518)), (x1, self.px(844))],
+            radius=radius,
+            fill=card_fill,
+            outline=card_outline,
+            width=border_w,
+        )
+        label_font = self.resman.load_font("warhelios_bold.ttf", size=10)
+        draw.text(
+            self.xy((820, 523)),
+            "KILL FEED",
+            fill=(124, 158, 192, 220),
+            font=label_font,
+        )
+        if getattr(self, "enable_chat", True):
+            draw.line(
+                [self.xy((820, 746)), self.xy((1336, 746))],
+                fill=divider_color,
+                width=border_w,
+            )
+
+    @staticmethod
+    def _fit_text(text: str, font, max_width: int) -> str:
+        """Truncates text with ellipsis to fit within max_width pixels."""
+        cleaned = " ".join(str(text).split())
+        if not cleaned or max_width <= 0:
+            return ""
+        bbox = font.getbbox(cleaned)
+        if (bbox[2] - bbox[0]) <= max_width:
+            return cleaned
+        ellipsis = "..."
+        eb = font.getbbox(ellipsis)
+        ell_w = eb[2] - eb[0]
+        avail = max_width - ell_w
+        if avail <= 0:
+            return ellipsis
+        low, high, best = 0, len(cleaned), 0
+        while low <= high:
+            mid = (low + high) // 2
+            tb = font.getbbox(cleaned[:mid])
+            if (tb[2] - tb[0]) <= avail:
+                best = mid
+                low = mid + 1
+            else:
+                high = mid - 1
+        return cleaned[:best].rstrip() + ellipsis
+
+    def _format_map_name(self) -> str:
+        game_map = self.replay_data.game_map
+        if game_map in MAP_NAMES:
+            return MAP_NAMES[game_map]
+        cleaned = re.sub(r"^(?:\d+_(?:OC|NE|NA|CO)_|\d+_|[esr]\d+_)", "", game_map)
+        return cleaned.replace("_", " ").strip().title() or game_map
+
+    def _format_battle_mode(self) -> tuple[str, str]:
+        """Returns (mode_badge, cap_style) inferred cleanly from ReplayData."""
+        players = self.replay_data.player_info.values()
+        allies = [p for p in players if p.relation in (-1, 0)]
+        enemies = [p for p in players if p.relation == 1]
+        na, ne = len(allies), len(enemies)
+        fmt = f"{na}v{ne}" if na and ne else f"{len(self.replay_data.player_info)}P"
+
+        events = self.replay_data.events
+        cap_style = "Battle"
+        if events:
+            int_keys = [k for k in events if isinstance(k, int)]
+            first_key = min(int_keys) if int_keys else next(iter(events))
+            cps = list(events[first_key].evt_control.values())
+            n_cps = len(cps)
+            if n_cps == 2 and any(cp.control_point_type == 5 for cp in cps):
+                cap_style = "Standard"
+            elif n_cps >= 2:
+                cap_style = f"Domination ({n_cps} Caps)"
+            elif n_cps == 1:
+                cap_style = "Arms Race"
+            else:
+                cap_style = "Escort / Special"
+
+        is_ops = self.replay_data.game_map.startswith("s") or getattr(
+            self, "is_operations", False
+        )
+        if is_ops:
+            return "OPERATION", "PvE Scenario"
+        if ne > 12:
+            return "PVE / EVENT", cap_style
+        if enemies and sum(1 for p in enemies if p.is_bot) >= max(1, ne // 2) and na <= 9:
+            return f"CO-OP · {fmt}", cap_style
+        if self.replay_data.game_battle_type % 10 == 5 or (na == 6 and ne == 6):
+            return f"RANKED · {fmt}", cap_style
+        if na == 7 and ne == 7 and any(p.clan_tag for p in allies):
+            return f"CLAN / BRAWL · {fmt}", cap_style
+        if na != ne and ne == 0:
+            return "TRAINING", cap_style
+        return f"RANDOM · {fmt}", cap_style
+
+    def _draw_header(self, image: Image.Image):
+        """Draws the tactical match metadata header into Card 1."""
+        if image.width < self.px(1360):
+            return
+
+        draw = ImageDraw.Draw(image)
+        logo = self.resman.load_image("logo.png")
+        target_h = max(1, self.px(76))
+        target_w = max(1, round(logo.width * target_h / logo.height))
+        compact_logo = logo.resize((target_w, target_h), Image.Resampling.LANCZOS)
+        logo_x = self.px(820)
+        logo_y = self.px(10) + max(0, (self.px(112) - target_h) // 2)
+        image.alpha_composite(compact_logo, (logo_x, logo_y))
+
+        text_x = self.px(892)
+        right_x = self.px(1336)
+        max_w = max(1, right_x - text_x)
+
+        mode_badge, cap_style = self._format_battle_mode()
+        font_badge = self.resman.load_font("warhelios_bold.ttf", size=12)
+        bb = font_badge.getbbox(mode_badge)
+        bw, bh = bb[2] - bb[0], bb[3] - bb[1]
+        pad_x, pad_y = self.px(8), self.px(4)
+        pill_w = bw + pad_x * 2
+        pill_h = bh + pad_y * 2
+        pill_x1 = right_x
+        pill_x0 = pill_x1 - pill_w
+        pill_y0 = self.px(21)
+        pill_y1 = pill_y0 + pill_h
+        draw.rounded_rectangle(
+            [(pill_x0, pill_y0), (pill_x1, pill_y1)],
+            radius=max(3, self.px(5)),
+            fill=(16, 52, 78, 230),
+            outline=(72, 188, 236, 200),
+            width=max(1, self.px(1)),
+        )
+        draw.text(
+            (pill_x0 + pad_x - bb[0], pill_y0 + pad_y - bb[1]),
+            mode_badge,
+            fill="#8ae8ff",
+            font=font_badge,
+        )
+
+        font_title = self.resman.load_font("warhelios_bold.ttf", size=22)
+        title_max_w = max(1, pill_x0 - text_x - self.px(10))
+        title_str = self._fit_text("Minimap Renderer", font_title, title_max_w)
+        tb = font_title.getbbox(title_str)
+        draw.text(
+            (text_x, self.px(20) - tb[1] + self.px(2)),
+            title_str,
+            fill="#ffffff",
+            font=font_title,
+        )
+
+        draw.line(
+            [(text_x, self.px(49)), (right_x, self.px(49))],
+            fill=(64, 116, 162, 110),
+            width=max(1, self.px(1)),
+        )
+
+        # Row 2: Map Name · Mode · Client Version
+        map_name = self._format_map_name()
+        ver_str = self.replay_data.game_version.replace("_", ".")
+        meta_text = f"{map_name}  ·  {cap_style}  ·  v{ver_str}"
+        font_meta = self.resman.load_font_with_text(meta_text, size=14)
+        meta_fit = self._fit_text(meta_text, font_meta, max_w)
+        mb = font_meta.getbbox(meta_fit)
+        draw.text(
+            (text_x, self.px(58) - mb[1] + self.px(2)),
+            meta_fit,
+            fill="#a9cce8",
+            font=font_meta,
+        )
+
+        # Row 3: Dual tags or Single-view recorder [CLAN] Nickname · Tier Ship
+        row3_y = self.px(86)
+        if getattr(self, "dual_mode", False):
+            g_tag = getattr(self, "green_tag", None) or "GREEN"
+            r_tag = getattr(self, "red_tag", None) or "RED"
+            font_row3 = self.resman.load_font_with_text(f"{g_tag}{r_tag}", size=15)
+            vs_text = "  vs  "
+            vs_w = font_row3.getbbox(vs_text)[2] - font_row3.getbbox(vs_text)[0]
+            half_w = max(20, (max_w - vs_w) // 2)
+            g_str = self._fit_text(f"[{g_tag}]", font_row3, half_w)
+            r_str = self._fit_text(f"[{r_tag}]", font_row3, half_w)
+            gb = font_row3.getbbox(g_str)
+            gy = row3_y - gb[1] + self.px(2)
+            cx = text_x
+            draw.text((cx, gy), g_str, fill=COLORS_NORMAL[0], font=font_row3)
+            cx += gb[2] - gb[0]
+            draw.text((cx, gy), vs_text, fill="#8da8c4", font=font_row3)
+            cx += vs_w
+            draw.text((cx, gy), r_str, fill=COLORS_NORMAL[1], font=font_row3)
+            return
+
+        owner = self.replay_data.player_info.get(self.replay_data.owner_id)
+        if not owner:
+            return
+
+        ships = self.resman.load_json("ships.json")
+        ship_info = ships.get(owner.ship_params_id, {})
+        ship_name = ship_info.get("name", "")
+        level = ship_info.get("level", 0)
+        tier_str = TIER_ROMAN[level - 1] if 1 <= level <= len(TIER_ROMAN) else ""
+        ship_suffix = f"  ·  {tier_str} {ship_name}".rstrip() if ship_name else ""
+
+        if getattr(self, "anon", False):
+            clan_tag = "#" * len(owner.clan_tag) if owner.clan_tag else ""
+            player_name = getattr(self, "usernames", {}).get(owner.id, owner.name)
+        else:
+            clan_tag = owner.clan_tag
+            player_name = owner.name
+
+        clan_prefix = f"[{clan_tag}] " if clan_tag else ""
+        font_row3 = self.resman.load_font_with_text(
+            f"{clan_prefix}{player_name}{ship_suffix}", size=15
+        )
+        cb = font_row3.getbbox(clan_prefix) if clan_prefix else (0, 0, 0, 0)
+        clan_w = cb[2] - cb[0]
+        sb = font_row3.getbbox(ship_suffix) if ship_suffix else (0, 0, 0, 0)
+        ship_w = sb[2] - sb[0]
+
+        if clan_w + ship_w >= max_w - self.px(40) and ship_suffix:
+            ship_suffix = self._fit_text(ship_suffix, font_row3, max(0, max_w // 2))
+            sb = font_row3.getbbox(ship_suffix)
+            ship_w = sb[2] - sb[0]
+
+        name_avail = max(self.px(24), max_w - clan_w - ship_w)
+        name_fit = self._fit_text(player_name, font_row3, name_avail)
+        nb = font_row3.getbbox(name_fit)
+
+        # Align baseline consistently using full sample bbox
+        sample_b = font_row3.getbbox(f"{clan_prefix}{name_fit}{ship_suffix}" or "A")
+        draw_y = row3_y - sample_b[1] + self.px(2)
+
+        cx = text_x
+        if clan_prefix:
+            draw.text((cx, draw_y), clan_prefix, fill="#4ce8aa", font=font_row3)
+            cx += clan_w
+        draw.text((cx, draw_y), name_fit, fill="#ffffff", font=font_row3)
+        cx += nb[2] - nb[0]
+        if ship_suffix:
+            draw.text((cx, draw_y), ship_suffix, fill="#ffd24c", font=font_row3)
 
     def _load_map_manifest(self):
         """Loads the map's metadata and checks its values.
@@ -607,6 +919,8 @@ class RenderDual(RendererBase):
             )
         self._configure_resolution(resolution)
         self._load_map()
+        if getattr(self, "logs", False):
+            self._draw_header(self.minimap_bg)
 
         assert self.minimap_fg
         assert self.minimap_bg
@@ -1033,20 +1347,3 @@ class Renderer(RendererBase):
                 video_writer.send(frame_bytes)
             else:
                 self._write_frame(video_writer, output)
-
-    def _draw_header(self, image: Image.Image):
-        draw = ImageDraw.Draw(image)
-
-        logo = self.resman.load_image("logo.png")
-        image.paste(logo, self.xy((840, 25)), logo)
-
-        font_large = self.resman.load_font("warhelios_bold.ttf", size=35)
-        draw.text(self.xy((945, 30)), "Minimap Renderer", "white", font_large)
-
-        font_large = self.resman.load_font("warhelios_bold.ttf", size=16)
-        draw.text(
-            self.xy((945, 75)),
-            "https://github.com/In-dor/minimap_renderer",
-            "white",
-            font_large,
-        )

@@ -23,11 +23,18 @@ def draw_grid(size: int = 760, line_width: int = 1) -> Image.Image:
     """
     base = Image.new("RGBA", (size, size))
     draw = ImageDraw.Draw(base)
-    for x in range(0, size, round(size / 10)):
-        if x == 0:
-            continue
-        draw.line([(x, 0), (x, base.height)], fill="#ffffff40")
-        draw.line([(0, x), (base.width, x)], fill="#ffffff40")
+    for i in range(1, 10):
+        pos = round(size * i / 10)
+        draw.line(
+            [(pos, 0), (pos, base.height - 1)],
+            fill="#ffffff40",
+            width=line_width,
+        )
+        draw.line(
+            [(0, pos), (base.width - 1, pos)],
+            fill="#ffffff40",
+            width=line_width,
+        )
     draw.rectangle((0, 0, base.width - 1, base.height - 1),
                    outline="#ffffff40", width=line_width)
     return base.copy()
@@ -50,9 +57,10 @@ def generate_holder(
     dict_player_holder: dict[int, Image.Image] = {}
     scale = resman.render_scale
     text_offset = round(16 * scale)
-    hw, hh = (round(100 * scale), round(100 * scale))
+    base_hw = round(100 * scale)
+    hh = round(100 * scale)
+    stroke_w = max(1, round(1.5 * scale))
     ships = resman.load_json("ships.json")
-    font = resman.load_font(filename="warhelios_bold.ttf", size=12)
 
     for player in player_info.values():
         if color:
@@ -61,13 +69,27 @@ def generate_holder(
             font_color = COLORS_NORMAL[player.relation]
 
         info = ships[player.ship_params_id]
+        ship_name = info["name"]
+        font = (
+            resman.load_font_with_text(ship_name, size=12)
+            if hasattr(resman, "load_font_with_text")
+            else resman.load_font(filename="warhelios_bold.ttf", size=12)
+        )
+        bbox = font.getbbox(ship_name)
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
+        hw = max(base_hw, text_w + stroke_w * 4 + round(10 * scale))
         holder: Image.Image = Image.new("RGBA", (hw, hh))
         holder_draw: ImageDraw.ImageDraw = ImageDraw.Draw(holder)
-        text_w, text_h = font.getbbox(info["name"])[2:]
-        text_x = round((hw / 2) - (text_w / 2))
-        text_y = round((hh - text_h) - text_offset)
+        text_x = round((hw - text_w) / 2) - bbox[0]
+        text_y = round(hh - round(12 * scale) - bbox[3])
         holder_draw.text(
-            xy=(text_x, text_y), text=info["name"], fill=font_color, font=font
+            xy=(text_x, text_y),
+            text=ship_name,
+            fill=font_color,
+            font=font,
+            stroke_width=stroke_w,
+            stroke_fill=(8, 12, 18, 220),
         )
         dict_player_holder[player.id] = holder
     return dict_player_holder
@@ -102,7 +124,13 @@ def paste_args_centered(
 
 
 def draw_health_bar(
-    image: Image.Image, width=None, height=None, y_pos=None, color="red", hp_per=1.0
+    image: Image.Image,
+    width=None,
+    height=None,
+    y_pos=None,
+    color="red",
+    hp_per=1.0,
+    regen_per: float = 0.0,
 ):
     """Draws a health bar to the image given.
 
@@ -114,21 +142,34 @@ def draw_health_bar(
         color (str, optional): The color of the health bar. Defaults to "red".
         hp_per (float, optional): Hit points for the health bar.
         Defaults to 1.0.
+        regen_per (float, optional): Total HP percentage including healable
+        HP. Defaults to 0.0.
     """
-    scale = image.width / 100
+    scale = image.height / 100
     width = round(50 * scale) if width is None else width
     height = max(1, round(5 * scale)) if height is None else height
     y_pos = round(65 * scale) if y_pos is None else y_pos
     draw = ImageDraw.Draw(image)
     assert width <= image.width
     assert y_pos < image.height - height
+    hp_clamped = max(0.0, min(1.0, float(hp_per)))
+    regen_clamped = max(hp_clamped, min(1.0, float(regen_per)))
     x1 = image.width / 2 - width / 2
     y1 = y_pos
-    x2 = ((image.width / 2 + width / 2) - x1) * hp_per + x1
+    x_end = image.width / 2 + width / 2
+    x2 = (x_end - x1) * hp_clamped + x1
     y2 = y_pos + height
-    xy1 = (x1, y1, x2, y2)
-    xy2 = (x1, y1, (image.width / 2 + width / 2), y2)
-    draw.rectangle(xy=xy1, fill=color)
+    xy2 = (x1, y1, x_end, y2)
+    # Dark translucent slot background for high contrast on bright maps/smoke
+    draw.rectangle(xy=xy2, fill=(8, 12, 18, 175))
+    if regen_clamped > hp_clamped:
+        x_regen = (x_end - x1) * regen_clamped + x1
+        draw.rectangle(
+            xy=(x2, y1, x_regen, y2),
+            fill=(208, 218, 228, 165),
+        )
+    if hp_clamped > 0:
+        draw.rectangle(xy=(x1, y1, x2, y2), fill=color)
     draw.rectangle(xy=xy2, outline=color, width=max(1, round(scale)))
 
 
@@ -146,7 +187,7 @@ def replace_color(img: Image.Image, from_color: str, to_color: str):
 
     data = np.array(img)
     red, green, blue = data[:, :, 0], data[:, :, 1], data[:, :, 2]
-    mask = (red == f_color[0]) & (blue == f_color[1]) & (green == f_color[2])
+    mask = (red == f_color[0]) & (green == f_color[1]) & (blue == f_color[2])
     data[:, :, :3][mask] = t_color
     return Image.fromarray(data)
 

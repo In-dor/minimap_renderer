@@ -722,8 +722,6 @@ class BattleController(IBattleController):
         self._dict_vehicle[entity.id] = self._dict_vehicle[entity.id]._replace(
             health=health
         )
-        if entity.id == 959830:
-            exit()
 
     def _set_is_alive(self, entity: Entity, is_alive):
         self._dict_vehicle[entity.id] = self._dict_vehicle[entity.id]._replace(

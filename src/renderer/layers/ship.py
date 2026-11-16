@@ -1,3 +1,4 @@
+from collections import OrderedDict
 from typing import Optional
 from ..data import ReplayData
 from renderer.render import Renderer
@@ -12,6 +13,9 @@ from renderer.utils import (
 from PIL import Image, ImageDraw
 from math import hypot
 from functools import lru_cache
+
+_HOLDER_CACHE_MAX = 512
+_CONSUMABLE_CACHE_MAX = 512
 
 MIN_VIEW_DISTANCES = {
     1: 15000,
@@ -68,10 +72,12 @@ class LayerShipBase(LayerBase):
         )
         self._abilities = renderer.resman.load_json("abilities.json")
         self._ships = renderer.resman.load_json("ships.json")
-        self._consumable_cache: dict[int, Image.Image] = {}
+        self._consumable_cache: OrderedDict[tuple, Optional[Image.Image]] = OrderedDict()
         self._unknown_consumables: set[tuple[int, int]] = set()
         self._missing_consumable_icons: set[str] = set()
-        self._holder_cache: dict[tuple, Image.Image] = {}
+        self._holder_cache: OrderedDict[
+            tuple, tuple[Optional[Image.Image], int, int]
+        ] = OrderedDict()
         self._owner = self._replay_data.player_info[self._replay_data.owner_id]
         self._owner_view_range = self._get_max_dist()
         self._deads: list[int] = []
@@ -159,6 +165,9 @@ class LayerShipBase(LayerBase):
                 source=self._dead_bbox,
             )
 
+        placed_rects: list[tuple[int, int, int, int]] = []
+        overlap_step = max(6, self._renderer.px(12))
+
         for vehicle in sorted(
             events[game_time].evt_vehicle.values(),
         ):
@@ -241,46 +250,53 @@ class LayerShipBase(LayerBase):
 
             if vehicle.is_alive:
                 if vehicle.is_visible:
-                    d1 = abs(self._renderer.minimap_size - x)
-                    d2 = abs(self._renderer.minimap_size - y)
-                    d3 = x
-                    d4 = y
-
-                    angle = 0
-                    c_y_pos = self._renderer.px(20)
-                    edge_distance = self._renderer.px(40)
-
-                    if d1 <= edge_distance and d2 <= edge_distance:
-                        angle = -135
-                    elif d2 <= edge_distance and d3 <= edge_distance:
-                        angle = 135
-                    elif d3 <= edge_distance and d4 <= edge_distance:
-                        angle = 45
-                    elif d4 <= edge_distance and d1 <= edge_distance:
-                        angle = -45
-                    else:
-                        if d1 <= edge_distance:
-                            angle = -90
-                        if d2 <= edge_distance:
-                            angle = -180
-                        if d3 <= edge_distance:
-                            angle = 90
-
-                    if angle or d4 <= edge_distance:
-                        c_y_pos = self._renderer.px(83)
+                    edge_distance = self._renderer.px(34)
+                    near_top = y <= edge_distance
+                    c_y_pos = (
+                        self._renderer.px(94)
+                        if near_top
+                        else self._renderer.px(20)
+                    )
 
                     cropped_holder, ox, oy = self._get_ship_holder(
                         vehicle,
                         player,
                         color,
                         is_in_view_range,
-                        angle,
+                        0,
                         c_y_pos,
                     )
                     if cropped_holder is not None:
+                        cw, ch = cropped_holder.size
+                        margin = max(2, self._renderer.px(2))
+                        raw_dx = max(
+                            margin,
+                            min(max(margin, image.width - cw - margin), x + ox),
+                        )
+                        raw_dy = y + oy
+                        if raw_dy + ch > image.height - margin:
+                            raw_dy = (
+                                y
+                                - round(icon.height / 2)
+                                - ch
+                                - max(2, self._renderer.px(3))
+                            )
+                        dest_x, dest_y = self._resolve_label_position(
+                            raw_dx,
+                            raw_dy,
+                            cw,
+                            ch,
+                            image.width,
+                            image.height,
+                            placed_rects,
+                            overlap_step,
+                        )
+                        placed_rects.append(
+                            (dest_x, dest_y, dest_x + cw, dest_y + ch)
+                        )
                         image.alpha_composite(
                             cropped_holder,
-                            dest=(x + ox, y + oy),
+                            dest=(dest_x, dest_y),
                         )
             if not vehicle.is_alive and vehicle.vehicle_id not in self._deads:
                 self._deads.append(vehicle.vehicle_id)
@@ -313,6 +329,46 @@ class LayerShipBase(LayerBase):
             max(bb, bottom),
         )
 
+    @staticmethod
+    def _resolve_label_position(
+        dest_x: int,
+        dest_y: int,
+        cw: int,
+        ch: int,
+        canvas_w: int,
+        canvas_h: int,
+        placed_rects: list[tuple[int, int, int, int]],
+        step: int,
+    ) -> tuple[int, int]:
+        """Nudges overlapping ship holders vertically inside canvas bounds."""
+        cx = max(0, min(max(0, canvas_w - cw), dest_x))
+        base_cy = max(0, min(max(0, canvas_h - ch), dest_y))
+        if not placed_rects or step <= 0:
+            return cx, base_cy
+
+        shifts = (0, -step, step, -2 * step, 2 * step)
+        min_threshold = 0.12 * cw * ch
+        best_pos = (cx, base_cy)
+        best_area = float("inf")
+
+        for dy in shifts:
+            cy = max(0, min(max(0, canvas_h - ch), dest_y + dy))
+            area = 0
+            for px0, py0, px1, py1 in placed_rects:
+                ix0 = max(cx, px0)
+                iy0 = max(cy, py0)
+                ix1 = min(cx + cw, px1)
+                iy1 = min(cy + ch, py1)
+                if ix1 > ix0 and iy1 > iy0:
+                    area += (ix1 - ix0) * (iy1 - iy0)
+            if area <= min_threshold:
+                return cx, cy
+            if area < best_area:
+                best_area = area
+                best_pos = (cx, cy)
+
+        return best_pos
+
     def _get_ship_holder(
         self,
         vehicle,
@@ -323,11 +379,17 @@ class LayerShipBase(LayerBase):
         c_y_pos: int,
     ) -> tuple[Optional[Image.Image], int, int]:
         acs = self._renderer.conman.active_consumables.get(vehicle.vehicle_id)
-        ac_key = tuple(acs.keys()) if acs else ()
+        ac_key = tuple(sorted(acs.keys())) if acs else ()
         hp_key = (
             round(vehicle.health / player.max_health, 2)
-            if is_in_view_range
+            if is_in_view_range and player.max_health > 0
             else None
+        )
+        regen_raw = getattr(vehicle, "regeneration_health", 0.0)
+        regen_key = (
+            round((vehicle.health + regen_raw) / player.max_health, 2)
+            if is_in_view_range and regen_raw > 0 and player.max_health > 0
+            else 0.0
         )
         vis_key = (
             vehicle.visibility_flag > 0
@@ -336,6 +398,7 @@ class LayerShipBase(LayerBase):
         cache_key = (
             vehicle.player_id,
             hp_key,
+            regen_key,
             ac_key,
             angle,
             c_y_pos,
@@ -345,12 +408,13 @@ class LayerShipBase(LayerBase):
 
         cached = self._holder_cache.get(cache_key)
         if cached is not None:
+            self._holder_cache.move_to_end(cache_key)
             return cached
 
         holder = self._holders[vehicle.player_id].copy()
 
         if vis_key:
-            vx = self._renderer.px(15)
+            vx = max(0, round(holder.width / 2 - self._renderer.px(35)))
             vy = self._renderer.px(65)
             marker_size = max(1, self._renderer.px(5))
             draw = ImageDraw.Draw(holder)
@@ -359,12 +423,22 @@ class LayerShipBase(LayerBase):
                 fill="orange",
             )
 
-        if is_in_view_range:
+        if is_in_view_range and hp_key is not None:
             draw_health_bar(
                 holder,
                 color=color,
                 hp_per=hp_key,
+                regen_per=regen_key,
             )
+
+        orig_w, orig_h = holder.size
+        icon_size = max(1, self._renderer.px(20))
+        if ac_key and c_y_pos + icon_size > holder.height:
+            expanded = Image.new(
+                "RGBA", (holder.width, c_y_pos + icon_size + max(2, self._renderer.px(2)))
+            )
+            expanded.paste(holder, (0, 0))
+            holder = expanded
 
         self._ship_consumable(
             holder,
@@ -377,6 +451,11 @@ class LayerShipBase(LayerBase):
             holder = holder.rotate(
                 angle, Image.Resampling.BICUBIC, expand=True
             )
+            center_x = round(holder.width / 2)
+            center_y = round(holder.height / 2)
+        else:
+            center_x = round(orig_w / 2)
+            center_y = round(orig_h / 2)
 
         bbox = holder.getbbox()
         if bbox is None:
@@ -385,11 +464,13 @@ class LayerShipBase(LayerBase):
             cropped = holder.crop(bbox)
             res = (
                 cropped,
-                bbox[0] - round(holder.width / 2),
-                bbox[1] - round(holder.height / 2),
+                bbox[0] - center_x,
+                bbox[1] - center_y,
             )
 
         self._holder_cache[cache_key] = res
+        if len(self._holder_cache) > _HOLDER_CACHE_MAX:
+            self._holder_cache.popitem(last=False)
         return res
 
     def _ship_consumable(
@@ -404,19 +485,22 @@ class LayerShipBase(LayerBase):
         """
         y = self._renderer.px(20) if y is None else y
         if ac := self._renderer.conman.active_consumables.get(vehicle_id, None):
-            aid_hash = hash(tuple(ac))
+            cache_key = (params_id, tuple(sorted(ac.keys())))
 
-            if c_image := self._consumable_cache.get(aid_hash, None):
-                x = int(image.width / 2 - c_image.width / 2)
-                image.alpha_composite(c_image, (x, y))
+            if cache_key in self._consumable_cache:
+                c_image = self._consumable_cache[cache_key]
+                self._consumable_cache.move_to_end(cache_key)
+                if c_image is not None:
+                    x = int(image.width / 2 - c_image.width / 2)
+                    image.alpha_composite(c_image, (x, y))
             else:
-                icon_size = self._renderer.px(20)
+                icon_size = max(1, self._renderer.px(20))
                 c_icons_holder = Image.new(
                     "RGBA", (icon_size * len(ac), icon_size)
                 )
                 x_pos = 0
 
-                for aid, _ in ac.items():
+                for aid in sorted(ac.keys()):
                     index = self._get_consumable_index(params_id, aid)
                     if index is None:
                         # 已知类型但游戏未提供图标 (如行动模式临时消耗品),
@@ -454,11 +538,19 @@ class LayerShipBase(LayerBase):
                     c_icons_holder.alpha_composite(c_image, (x_pos, 0))
                     x_pos += icon_size
 
-                self._consumable_cache[aid_hash] = c_icons_holder
-                image.alpha_composite(
-                    c_icons_holder,
-                    (int(image.width / 2 - c_icons_holder.width / 2), y),
-                )
+                if x_pos > 0:
+                    c_icons_holder = c_icons_holder.crop(
+                        (0, 0, x_pos, icon_size)
+                    )
+                    self._consumable_cache[cache_key] = c_icons_holder
+                    image.alpha_composite(
+                        c_icons_holder,
+                        (int(image.width / 2 - c_icons_holder.width / 2), y),
+                    )
+                else:
+                    self._consumable_cache[cache_key] = None
+                if len(self._consumable_cache) > _CONSUMABLE_CACHE_MAX:
+                    self._consumable_cache.popitem(last=False)
 
     @lru_cache(maxsize=256)
     def _ship_icon_name(

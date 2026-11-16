@@ -1,5 +1,6 @@
 from PIL import Image, ImageDraw
-from math import ceil, floor
+from math import ceil, floor, pi
+import numpy as np
 from renderer.base import LayerBase
 from renderer.render import Renderer
 from typing import Optional
@@ -44,7 +45,7 @@ class LayerSmokeBase(LayerBase):
             return
 
         smoke_sig = tuple(
-            (sid, s.radius, len(s.points)) for sid, s in evt_smoke.items()
+            (sid, s.radius, tuple(s.points)) for sid, s in evt_smoke.items()
         )
         if evt_smoke is self._cached_smokes or smoke_sig == self._cached_sig:
             overlay, position = self._cached_overlay
@@ -62,27 +63,66 @@ class LayerSmokeBase(LayerBase):
         if not circles:
             return
 
-        left = max(0, floor(min(x - r for x, _, r in circles)))
-        top = max(0, floor(min(y - r for _, y, r in circles)))
+        ring_w = max(1, self._renderer.px(1.5))
+        pad = ring_w + 2
+        left = max(0, floor(min(x - r for x, _, r in circles)) - pad)
+        top = max(0, floor(min(y - r for _, y, r in circles)) - pad)
         right = min(
-            image.width, ceil(max(x + r for x, _, r in circles)) + 1
+            image.width, ceil(max(x + r for x, _, r in circles)) + pad + 1
         )
         bottom = min(
-            image.height, ceil(max(y + r for _, y, r in circles)) + 1
+            image.height, ceil(max(y + r for _, y, r in circles)) + pad + 1
         )
         if right <= left or bottom <= top:
             return
-        base = Image.new("RGBA", (right - left, bottom - top))
-        draw = ImageDraw.Draw(base, mode="RGBA")
+
+        w, h = right - left, bottom - top
+        aa = 2
+        aw, ah = w * aa, h * aa
+        aring_w = ring_w * aa
+
+        fill_mask = Image.new("L", (aw, ah), 0)
+        fill_draw = ImageDraw.Draw(fill_mask)
+        inner_mask = Image.new("L", (aw, ah), 0)
+        inner_draw = ImageDraw.Draw(inner_mask)
+        ring_img = Image.new("RGBA", (aw, ah), (0, 0, 0, 0))
+        ring_draw = ImageDraw.Draw(ring_img)
 
         for x, y, r in circles:
-            draw.ellipse(
-                [
-                    (x - r - left, y - r - top),
-                    (x + r - left, y + r - top),
-                ],
-                fill="#ffffff40",
-            )
+            cx = (x - left) * aa
+            cy = (y - top) * aa
+            ar = r * aa
+            fill_draw.ellipse([(cx - ar, cy - ar), (cx + ar, cy + ar)], fill=255)
+            ir = max(0.0, ar - aring_w * 1.1)
+            if ir > 0:
+                inner_draw.ellipse(
+                    [(cx - ir, cy - ir), (cx + ir, cy + ir)], fill=255
+                )
+            dash_count = max(14, round(2 * pi * r / max(4, self._renderer.px(9))))
+            step = 360.0 / dash_count
+            arc_span = step * 0.56
+            bbox = [(cx - ar, cy - ar), (cx + ar, cy + ar)]
+            for idx in range(dash_count):
+                start = idx * step
+                ring_draw.arc(
+                    bbox,
+                    start=start,
+                    end=start + arc_span,
+                    fill=(220, 234, 248, 175),
+                    width=aring_w,
+                )
+
+        # Erase interior overlapping arcs so only the outer perimeter is dashed
+        ring_arr = np.array(ring_img)
+        inner_arr = np.array(inner_mask)
+        ring_arr[:, :, 3] = np.where(inner_arr > 128, 0, ring_arr[:, :, 3])
+        ring_clean = Image.fromarray(ring_arr, mode="RGBA")
+
+        base_hi = Image.new("RGBA", (aw, ah), (0, 0, 0, 0))
+        mist_layer = Image.new("RGBA", (aw, ah), (220, 232, 245, 34))  # #dce8f522
+        base_hi.paste(mist_layer, (0, 0), mask=fill_mask)
+        base_hi = Image.alpha_composite(base_hi, ring_clean)
+        base = base_hi.resize((w, h), Image.Resampling.LANCZOS)
 
         position = (left, top)
         self._cached_smokes = evt_smoke

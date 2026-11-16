@@ -283,8 +283,9 @@ def test_writer_applies_interpolation_before_vaapi_upload(
     assert filter_value == "framerate=fps=60,format=nv12,hwupload"
 
 
+@patch("renderer.render.get_ffmpeg_exe", return_value="ffmpeg")
 @patch("renderer.render.subprocess.run")
-def test_vaapi_probe_binds_device_and_uploads_frames(run):
+def test_vaapi_probe_binds_device_and_uploads_frames(run, _ffmpeg):
     from renderer.render import _probe_video_encoder
 
     _probe_video_encoder.cache_clear()

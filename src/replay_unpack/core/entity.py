@@ -162,7 +162,7 @@ class Entity:
     ):
 
         prop_hash = entity_name + "_" + prop_path
-        if prop_path not in cls._nested_properties_subscription:
+        if prop_hash not in cls._nested_properties_subscription:
             cls._nested_properties_subscription[prop_hash] = []
         cls._nested_properties_subscription[prop_hash].append(func)
 

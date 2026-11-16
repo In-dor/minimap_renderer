@@ -41,6 +41,40 @@ class LayerTorpedoBase(LayerBase):
         }
         self._hits: set[int] = set()
         self._acoustic_torpedo_buf: dict[int, AcousticTorpedo] = {}
+        self._acoustic_ids: set[int] = set()
+
+    def _draw_torpedo_dot(
+        self,
+        draw: ImageDraw.ImageDraw,
+        x: int,
+        y: int,
+        color: str,
+        is_acoustic: bool,
+    ) -> None:
+        radius = max(2, self._renderer.px(2))
+        outline_w = max(1, self._renderer.px(1))
+        if is_acoustic:
+            ring_r = radius + max(1, self._renderer.px(2))
+            draw.ellipse(
+                [(x - ring_r - outline_w, y - ring_r - outline_w),
+                 (x + ring_r + outline_w, y + ring_r + outline_w)],
+                fill=(8, 12, 18, 225),
+            )
+            draw.ellipse(
+                [(x - ring_r, y - ring_r), (x + ring_r, y + ring_r)],
+                outline="#9ef6ff",
+                width=max(1, self._renderer.px(1)),
+            )
+        else:
+            draw.ellipse(
+                [(x - radius - outline_w, y - radius - outline_w),
+                 (x + radius + outline_w, y + radius + outline_w)],
+                fill=(8, 12, 18, 220),
+            )
+        draw.ellipse(
+            [(x - radius, y - radius), (x + radius, y + radius)],
+            fill=color,
+        )
 
     def draw(
         self,
@@ -70,7 +104,10 @@ class LayerTorpedoBase(LayerBase):
             if intersection:
                 for hit in intersection:
                     self._active_torpedoes.pop(hit, None)
+                    self._acoustic_ids.discard(hit)
                 self._hits.difference_update(intersection)
+
+        self._acoustic_ids.update(events.evt_acoustic_torpedo.keys())
 
         for sid, torpedo in events.evt_torpedo.items():
             owner_id = torpedo.owner_id
@@ -87,11 +124,7 @@ class LayerTorpedoBase(LayerBase):
             else:
                 color = COLORS_NORMAL[relation]
 
-            radius = max(1, self._renderer.px(2))
-            draw.ellipse(
-                [(x - radius, y - radius), (x + radius, y + radius)],
-                fill=color,
-            )
+            self._draw_torpedo_dot(draw, x, y, color, sid in self._acoustic_ids)
         self._active_torpedoes.update(events.evt_torpedo)
         self._acoustic_torpedo_buf.update(events.evt_acoustic_torpedo)
 
@@ -135,11 +168,7 @@ class LayerTorpedoBase(LayerBase):
             else:
                 color = COLORS_NORMAL[relation]
 
-            radius = max(1, self._renderer.px(2))
-            draw.ellipse(
-                [(x - radius, y - radius), (x + radius, y + radius)],
-                fill=color,
-            )
+            self._draw_torpedo_dot(draw, x, y, color, sid in self._acoustic_ids)
             self._active_torpedoes[sid] = active_torpedo._replace(
                 origin=(x2, -y2)
             )
