@@ -2,41 +2,75 @@
 
 # Minimap Renderer
 
-**Turn World of Warships replays into crisp, smooth minimap battle videos**
+**Turn World of Warships replays into native 1920×1200 60 FPS tactical minimap videos and 2.4K post-battle review infographics**
 
-[简体中文](README.md) · [Report an issue](https://github.com/In-dor/minimap_renderer/issues) · [Original project](https://github.com/WoWs-Builder-Team/minimap_renderer)
+[简体中文](README.md) · [Report an Issue](https://github.com/In-dor/minimap_renderer/issues) · [Original Project](https://github.com/WoWs-Builder-Team/minimap_renderer)
 
 [![Tests](https://github.com/In-dor/minimap_renderer/actions/workflows/tests.yml/badge.svg)](https://github.com/In-dor/minimap_renderer/actions/workflows/tests.yml)
-[![Python 3.10](https://img.shields.io/badge/Python-3.10-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Game Version](https://img.shields.io/badge/WoWS-≤%2015.10.0-00B4D8)](https://github.com/In-dor/minimap_renderer)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-2E7D32.svg)](LICENSE)
 [![Maintained](https://img.shields.io/badge/status-maintained-00A86B.svg)](https://github.com/In-dor/minimap_renderer)
 
-![Minimap Renderer demo](images/minimap.gif)
+<img src="images/minimap.gif" alt="Minimap Renderer tactical video demo" width="920">
 
 </div>
 
 > [!IMPORTANT]
-> [WoWs-Builder-Team/minimap_renderer](https://github.com/WoWs-Builder-Team/minimap_renderer) has been archived and is no longer maintained. The actively maintained version is **[In-dor/minimap_renderer](https://github.com/In-dor/minimap_renderer)**. Install updates and report issues here.
+> The upstream [WoWs-Builder-Team/minimap_renderer](https://github.com/WoWs-Builder-Team/minimap_renderer) repository has been archived and is no longer maintained. **[In-dor/minimap_renderer](https://github.com/In-dor/minimap_renderer)** is the actively maintained fork with up-to-date client support, the redesigned tactical HUD, and the 2.4K post-battle report generator. Please install updates and report issues here.
 
-## Highlights
+`Minimap Renderer` is a tactical visualization and post-battle analysis toolkit for *World of Warships* `.wowsreplay` files. From a single replay pass, it produces a **crisp, ghost-free 60 FPS minimap timelapse video**, a **2.4K post-battle tactical review infographic** backed by official server settlement data, and **ShipBuilder loadout links**, with built-in support for dual-perspective tournament renders.
 
-- **Native high-resolution rendering**: draws directly at `1920x1200` instead of upscaling afterward, keeping text and icons sharp.
-- **Native temporal interpolation**: generates intermediate states for ship position and heading, aircraft, shells, and torpedoes for smooth `60 FPS` output by default.
-- **Detailed battle information**: renders ships, health, consumables, capture points, scores, damage, ribbons, frags, chat, and battle results.
-- **Efficient rendering pipeline**: features frame buffer memory reuse pools, ship rotation and status LRU caches, compact bounding-box alpha compositing, and overlapped drawing, frame serialization, and FFmpeg hardware encoding.
-- **Multiple interpolation modes**: supports `native`, `blend`, `duplicate`, and `motion`.
-- **Build export**: writes a JSON file containing player build links alongside the video.
-- **2.4K Battle Report Infographic**: automatically generates a comprehensive 2.4K post-battle scoreboard long card by default, featuring base XP & raw unmultiplied XP, ship frags & planes downed, full in-game communication logs with team-color coding, division badges, and weapon damage breakdown.
+---
 
-## Quick Start
+## Key Features
+
+### 1. Tactical Minimap Video & Modernized HUD (`*.mp4`)
+
+- **Native `1920×1200` (`8:5`) High-DPI Rendering**: Draws maps, typography, and vector-sharp icons directly onto the target canvas instead of upscaling a low-resolution frame afterward.
+- **Native State Interpolation (`native` 60 FPS)**: Computes continuous intermediate positions and headings for ships, squadrons, artillery shells, and torpedoes inside the renderer—eliminating frame-blending ghosting.
+- **Modern Deep-Sea Tactical HUD**:
+  - **Top Situation Bar**: Displays live team score bars, predicted win countdowns, a centered match timer, and an **alive/sunk ship-class silhouette lineup bar** for both teams.
+  - **Three-Stage Translucent Tactical Sidebar**:
+    - **Match Metadata Card**: Shows map name, battle/mode badge, client version, and the recorder's `[CLAN]` nickname, tier, and ship name.
+    - **Ship Status & Combat Card**: Renders a color-graded HP bar with a dark trough and gray repairable-HP segment, active fire/flooding hull nodes, live damage / potential / spotting counters, and wrapping ribbons & achievement medals.
+    - **Kill Feed & Match Chat Card**: Combines a weapon-icon kill feed on top with a `[MM:SS]` timestamped chat log featuring clan tag colors and gold division-chat highlighting below.
+- **High-Clarity Battlefield Layers**:
+  - **Exact `10×10` Tactical Grid** and crisp minimap frame borders;
+  - **Horizontal Outlined Ship Labels**: Dark-stroked horizontal ship names with automatic overlap avoidance and bottom-edge upright flipping (no upside-down ship names), paired with focus-fire markers and active radar/hydro indicator rings;
+  - **Soft-Fog Merged Dashed Smoke**: Rendered with 2× supersampled anti-aliasing that erases overlapping interior arcs so smoke screens display a clean, unified outer dashed perimeter;
+  - **Distinct Munitions & Torpedoes**: High-contrast ice cyan-white `AP` (`#c8f4ff`), amber-orange `HE`, and bright magenta `SAP` (`#ff5cc8`) tracers with main/secondary opacity separation; dark-outlined torpedoes plus bright cyan homing rings (`#9ef6ff`) for submarine acoustic torpedoes.
+- **Deterministic Multilingual Font Routing**: Automatically selects Chinese, Japanese, Korean, Cyrillic, or Latin fonts via deterministic Unicode code-point ranges—eliminating garbled glyphs (`□`) in multi-region matches without non-deterministic language guessing.
+- **High-Throughput Async Pipeline**: Combines LIFO frame-buffer pooling, static interval base-frame caching, LRU rotated-icon caches, and background FFmpeg hardware encoding.
+
+### 2. 2.4K Post-Battle Review Infographic (`*-report.png`)
+
+<div align="center">
+  <img src="images/battle_report.png" alt="2.4K Post-Battle Review Infographic Preview" width="920">
+</div>
+
+- **Zero-Overhead Single-Pass Extraction**: Reuses the parsed replay in memory when rendered alongside a video, capturing official `Packet 0x22` (`playersPublicInfo`) settlement results and `Avatar.receive_CommonCMD` binary radio commands in one stream pass to output the 2.4K report in **~1 second** after video encoding—or standalone in ~1 second via `--report-only`. Gracefully falls back to stream-reconstructed stats on legacy or incomplete replays lacking `Packet 0x22`.
+- **Personal Spotlight Hero Card**: Displays ship tier/class/nation, survival or killer attribution, gold division squad badges, **smart weapon-category damage breakdown** (main battery, secondaries, torpedoes, acoustic torpedoes, fire, flooding, rockets, bombs, depth charges, mines, missiles, ramming), 4-way combat cards (ships sunk, aircraft shot down, spotting damage, potential damage), adaptive single/double-row achievement medals, full ribbon grid, and main-battery shell hit details.
+- **Mode-Adaptive Dual Team Scoreboards**: Dynamically scales across Brawls, Ranked (6v6 / 7v7), Clan Battles, Random Battles (12v12), and Operations (70+ wave-spawned AI ships with equalized panel heights). Features **tinted official ship-class silhouettes**, division badges & row highlights, **match-normalized damage Data Bars**, true damage dealt, **spotting damage**, damage taken, potential damage, Base XP (marked with `*` on the winning team for the 1.5× victory bonus), survival/killer info, and per-player medal icons—all protected by pixel-exact binary-search ellipsis truncation.
+- **Embedded `760×760` Tactical Track Minimap**: Overlays the map, final capture zone ownership, team movement ghost trails (automatically segmented across unspotted gaps to prevent island-crossing artifacts), the recorder's **time-gradient highlight trajectory** (ice-blue → cyan → gold, with `START` and end/sunk anchors), and collision-avoided `[MM:SS] SHIP` sunk markers.
+- **Team HP Advantage Curve & Adaptive Dual-Column Comms Log**: Plots real-time team HP percentage curves with shaded advantage envelopes and kill inflection ticks on top, paired below with a chronological log interleaving All / Team / Division text chat and natively decoded **tactical quick radio commands** (sector pings, focus-target calls, support requests, cap/defend orders, and Radar / Hydro / Submarine Surveillance broadcasts) with automatic two-line wrapping. *(Note: Infographic UI labels are currently localized in Simplified Chinese alongside bilingual headers.)*
+
+### 3. Build Export & Dual-Team Tournament View
+
+- **Automatic Build Export (`*-builds.json`)**: Extracts allied ship upgrades, consumables, and commander skills into ready-to-open [WoWs ShipBuilder](https://app.wowssb.com/) URLs alongside the video.
+- **Dual-Perspective Tournament Render (`RenderDual`)**: Merges two replays recorded from opposite teams in the same match into a single synchronized god's-eye minimap video.
+
+---
+
+## Installation
 
 ### Requirements
 
-- Python `3.10`
+- Python `3.10` or newer (`3.10` recommended)
 - Windows or Linux
-- A valid World of Warships `.wowsreplay` file
+- A valid *World of Warships* `.wowsreplay` file
 
-Video encoding is provided through `imageio-ffmpeg`, so a separate FFmpeg setup is usually unnecessary after a normal installation.
+FFmpeg is bundled automatically via `imageio-ffmpeg`, so a separate system FFmpeg installation is generally unnecessary.
 
 ### Windows
 
@@ -56,9 +90,11 @@ python -m pip install --upgrade pip
 pip install --upgrade --force-reinstall git+https://github.com/In-dor/minimap_renderer.git
 ```
 
-## Usage
+---
 
-Render a replay with the default settings:
+## Quick Start
+
+Render a replay with the recommended default settings (produces the MP4 video, ShipBuilder JSON, and 2.4K battle report):
 
 ```bash
 python -m render --replay "path/to/battle.wowsreplay"
@@ -70,21 +106,31 @@ Windows example:
 python -m render --replay "F:\Replays\20260713_165525_PRSB510-Slava_54_Faroe.wowsreplay"
 ```
 
-The defaults are `1920x1200`, `60 FPS`, `15x` speed, quality `8`, and native interpolation. Output files are created next to the replay:
+Default settings use `1920x1200` resolution, `60 FPS`, `15x` playback speed, quality `8`, `native` interpolation, and `auto` hardware encoder probing. Output files are saved next to the replay:
 
 ```text
-battle.mp4
-battle-builds.json
-battle-report.png
+battle.mp4            # 1920x1200 60 FPS tactical minimap timelapse video
+battle-builds.json    # Allied player WoWs ShipBuilder loadout links
+battle-report.png     # 2.4K Ultra-HD post-battle review infographic
 ```
 
-Show the complete command help:
+### Generate Only the 2.4K Battle Report (~1s Output)
+
+To generate or share the post-battle infographic immediately without rendering the full video, pass `--report-only`:
 
 ```bash
-python -m render --help
+python -m render --replay "battle.wowsreplay" --report-only
 ```
 
-## Command Options
+When working from a source checkout, you can also invoke the standalone helper script directly (supports `-o` for a custom output path):
+
+```bash
+python tools/generate_battle_report.py "battle.wowsreplay" -o "custom_report.png"
+```
+
+---
+
+## Command-Line Options
 
 ```text
 python -m render --replay REPLAY
@@ -103,45 +149,20 @@ python -m render --replay REPLAY
 | Option            |     Default | Description                                                                                                                |
 | ----------------- | ----------: | -------------------------------------------------------------------------------------------------------------------------- |
 | `--replay`        |    required | Path to the `.wowsreplay` file                                                                                             |
-| `--fps`           |        `60` | Output frame rate; higher values produce smoother video and more rendered frames                                           |
-| `--speed`         |        `15` | Timelapse playback multiplier; `15` means approximately 15x speed                                                          |
-| `--resolution`    | `1920x1200` | Native render resolution; it must preserve the `1360:850` (`8:5`) layout ratio                                             |
-| `--quality`       |         `8` | Encoding quality from `1-10`; higher values generally increase quality and file size                                       |
-| `--interpolation` |    `native` | Frame generation mode, described below                                                                                     |
-| `--codec`         |      `h264` | Video format: broadly compatible `h264`, more efficient `h265`, or `av1`                                                   |
-| `--encoder`       |      `auto` | Probes available hardware encoders and falls back to CPU; `cpu`, `nvenc`, `qsv`, `vaapi`, and `amf` can also be selected explicitly |
-| `--no-report`     |     `False` | Disable automatic 2.4K battle report generation                                                                            |
-| `--report-only`   |     `False` | Generate 2.4K battle report infographic only (skips timelapse video rendering, fast ~1s output)                           |
-| `--report-path`   |      `None` | Custom output path for the battle report image (defaults to `<replay_stem>-report.png`)                                    |
+| `--fps`           |        `60` | Output video frame rate (must be `> 0`; `native` mode requires `--fps >= --speed`)                                         |
+| `--speed`         |        `15` | Timelapse playback multiplier (e.g., `15` condenses the battle by ~15×)                                                    |
+| `--resolution`    | `1920x1200` | Native render canvas size; dimensions must be positive even integers preserving the `1360:850` (`8:5`) aspect ratio        |
+| `--quality`       |         `8` | Encoding quality (`1-10`); calibrated for flat tactical UI (`8` maps to CRF/CQ `20` for sharp text without file-size bloat)|
+| `--interpolation` |    `native` | Frame generation mode: `native` (recommended), `blend`, `motion`, or `duplicate`                                           |
+| `--codec`         |      `h264` | Video codec: broadly compatible `h264`, higher-efficiency `h265`, or `av1`                                                 |
+| `--encoder`       |      `auto` | Encoder backend: `auto` probes available GPU encoders and falls back to CPU, or select `cpu`/`nvenc`/`qsv`/`vaapi`/`amf`   |
+| `--no-report`     |     `False` | Skip automatic 2.4K battle report generation after video rendering                                                         |
+| `--report-only`   |     `False` | Generate only the 2.4K battle report infographic (skips video rendering and build JSON export)                             |
+| `--report-path`   |      `None` | Custom output path for the battle report PNG (defaults to `<replay_stem>-report.png` next to the replay)                   |
 
-### Video Encoders
+### Recommended Presets
 
-`--codec` selects the video format, while `--encoder` selects CPU or a hardware backend. For the selected format, `auto` performs a real encoding test with NVIDIA NVENC, Intel Quick Sync, Linux VAAPI, and AMD AMF in that order instead of merely checking whether FFmpeg lists an encoder. It falls back to the corresponding CPU encoder when the hardware or driver is unavailable, and logs the result.
-
-| Format | CPU fallback | Characteristics                                                                       |
-| ------ | ------------ | ------------------------------------------------------------------------------------- |
-| `h264` | `libx264`    | Best player and browser compatibility; recommended default                            |
-| `h265` | `libx265`    | Usually smaller at similar quality, but unsupported by some browsers                  |
-| `av1`  | `libaom-av1` | High compression efficiency; CPU encoding is slow and playback support must be recent |
-
-When `--encoder qsv` or `--encoder vaapi` is selected explicitly, initialization failure for that format is reported instead of silently switching devices. Intel Linux NAS systems should normally retain `--encoder auto`: when QSV initialization fails, the renderer tests VAAPI before falling back to CPU.
-
-Docker and LXC deployments must expose `/dev/dri/renderD128`, grant the container process membership in the `render` group, and install the Intel media driver. The default VAAPI device is `/dev/dri/renderD128` and can be changed with `VAAPI_DEVICE`. If imageio's bundled FFmpeg lacks VAAPI, set `IMAGEIO_FFMPEG_EXE=/usr/bin/ffmpeg` to use the container's system FFmpeg. Hardware encoding primarily reduces CPU load during compression; Python/Pillow layer rendering remains CPU-bound.
-
-### Interpolation Modes
-
-| Mode        | Behavior                                                                                    | Recommended use                 |
-| ----------- | ------------------------------------------------------------------------------------------- | ------------------------------- |
-| `native`    | Interpolates object states in the renderer; motion stays sharp without whole-frame blending | **Recommended default**         |
-| `blend`     | Uses FFmpeg to blend adjacent frames; fast, but moving objects may show ghosting            | Compatibility with older output |
-| `duplicate` | Repeats source frames to reach the output rate; fastest, but motion is less fluid           | Maximum speed                   |
-| `motion`    | Uses FFmpeg motion compensation; very expensive and may create artifacts in complex scenes  | Experimental use                |
-
-In `native` mode, `--fps` must not be lower than `--speed`. With `--fps 60 --speed 15`, each source interval usually produces about four output frames.
-
-## Recommended Settings
-
-Balanced clarity, smoothness, and rendering speed:
+Balanced sharpness, smooth 60 FPS motion, and hardware acceleration (default):
 
 ```bash
 python -m render --replay "battle.wowsreplay" \
@@ -154,7 +175,7 @@ python -m render --replay "battle.wowsreplay" \
   --encoder auto
 ```
 
-Faster and smaller output:
+Smaller file size and faster rendering:
 
 ```bash
 python -m render --replay "battle.wowsreplay" \
@@ -167,58 +188,88 @@ python -m render --replay "battle.wowsreplay" \
   --encoder auto
 ```
 
-## Battle Report Infographic Generation
+---
 
-The renderer automatically creates a 2.4K Ultra-HD battle report long card (`*-report.png`) by default when producing a video.
+## Video Encoders & Interpolation Modes
 
-If you only need to inspect results or export the scoreboard infographic without spending time rendering the full timelapse video, use `--report-only`:
+### Video Encoders (`--codec` & `--encoder`)
 
-```bash
-python -m render --replay "battle.wowsreplay" --report-only
+`--codec` selects the video compression standard, while `--encoder` chooses a hardware backend or CPU encoding. With `--encoder auto`, the renderer performs an actual 1-frame FFmpeg encode probe across **NVIDIA NVENC → Intel Quick Sync (QSV) → Linux VAAPI → AMD AMF** in order rather than trusting encoder listings alone. If no supported GPU/driver is available, it falls back cleanly to the CPU encoder and logs the active backend.
+
+| Codec  | NVIDIA (`nvenc`) | Intel (`qsv`) | Linux (`vaapi`) | AMD (`amf`) | CPU Fallback (`cpu`) | Characteristics                                                       |
+| ------ | ---------------- | ------------- | --------------- | ----------- | -------------------- | --------------------------------------------------------------------- |
+| `h264` | `h264_nvenc`     | `h264_qsv`    | `h264_vaapi`    | `h264_amf`  | `libx264`            | Best browser, Discord, and media-player compatibility (**recommended**) |
+| `h265` | `hevc_nvenc`     | `hevc_qsv`    | `hevc_vaapi`    | `hevc_amf`  | `libx265`            | Smaller files at comparable quality (tagged with `hvc1`)              |
+| `av1`  | `av1_nvenc`      | `av1_qsv`     | `av1_vaapi`     | `av1_amf`   | `libaom-av1`         | Highest compression efficiency; CPU encoding is slow, best on modern GPUs |
+
+> [!TIP]
+> **Docker / LXC / Linux NAS Hardware Encoding Notes**:
+> - Explicitly passing `--encoder qsv` or `--encoder vaapi` raises an error if that device fails to initialize instead of switching silently. On Intel Linux NAS setups, keep `--encoder auto` so QSV failure automatically falls through to VAAPI before CPU.
+> - Containerized VAAPI requires passing `/dev/dri/renderD128` into the container, granting `render` group permissions, and installing Intel/Mesa media drivers. Override the device node via `VAAPI_DEVICE` (defaults to `/dev/dri/renderD128`).
+> - If the FFmpeg binary bundled with `imageio-ffmpeg` lacks VAAPI support, set `IMAGEIO_FFMPEG_EXE=/usr/bin/ffmpeg` to use the container's system FFmpeg.
+
+### Interpolation Modes (`--interpolation`)
+
+| Mode        | Behavior                                                                                               | Recommended Use                 |
+| ----------- | ------------------------------------------------------------------------------------------------------ | ------------------------------- |
+| `native`    | Interpolates ship positions, headings, aircraft, shells, and torpedoes in world/canvas space           | **Recommended default**         |
+| `blend`     | Blends adjacent frames via FFmpeg `framerate`; fast, though moving icons may exhibit slight ghosting   | Legacy output compatibility     |
+| `duplicate` | Repeats source frames to match target FPS; lowest overhead, less fluid at high timelapse speeds        | Maximum throughput              |
+| `motion`    | Applies FFmpeg `minterpolate` motion compensation; very CPU-intensive and prone to UI/tracer artifacts | Experimental use only           |
+
+---
+
+## Dual-Perspective Tournament Rendering (`RenderDual`)
+
+For Clan Battles, competitive tournaments, or training-room reviews where you have two `.wowsreplay` files from opposite teams in the same battle (matching `game_arena_id` and client version), `RenderDual` merges both perspectives into a single fog-free tactical video (see [`render_dual.py`](render_dual.py)):
+
+```python
+from replay_parser import ReplayParser
+from renderer.render import RenderDual
+
+with open("team_alpha.wowsreplay", "rb") as f1, open("team_bravo.wowsreplay", "rb") as f2:
+    alpha_data = ReplayParser(f1, strict=True).get_info()["hidden"]["replay_data"]
+    bravo_data = ReplayParser(f2, strict=True).get_info()["hidden"]["replay_data"]
+
+    RenderDual(
+        alpha_data,
+        bravo_data,
+        green_tag="Alpha",
+        red_tag="Bravo",
+    ).start(
+        "minimap_dual.mp4",
+        fps=30,
+        speed=15,
+        resolution=(1920, 1200),
+        interpolation="blend",
+    )
 ```
 
-Or invoke the standalone utility script directly:
+> Note: `RenderDual` synchronizes discrete integer event timestamps across both streams and does not support `native` interpolation; use `blend` or `duplicate` instead.
 
-```bash
-python tools/generate_battle_report.py "battle.wowsreplay"
-```
+---
 
-Report highlights:
-- **Official WG Settlement Values**: Directly extracts true post-battle damage dealt, spotting damage, and potential damage for all 24 players from Packet 0x22 (`playersPublicInfo`).
-- **Dual XP Presentation**: Side-by-side display of in-game Base XP (with 1.5x victory bonus, matching client scoreboard ordering) and pure unmultiplied Raw Base XP.
-- **AA & Frags Tracking**: Independent columns for ship kills and aircraft shot down.
-- **Full In-Game Chat Log**: Renders all match messages with authentic team/division color coding.
-- **Division Squad Links**: Displays squad badges and dedicated color-coding for division mates.
+## Compatibility & Issue Reporting
 
-## Performance Reference
+- **Latest Client Support**: Actively maintained up to *World of Warships* **`15.10.0`**.
+- **Broad Legacy & Mode Coverage**: Ships with versioned packet definitions and 40+ high-DPI-adapted rendering layers spanning **`0.11.6` through `15.10.0`**, supporting Random, Ranked, Clan, Brawl, Co-op, Airship Escort, Arms Race, and PvE Operations (including Operation-specific consumables). For older historical replays (`0.11.x` ~ `12.5`) or incomplete matches without `Packet 0x22`, the battle report automatically falls back to stream-reconstructed damage and frag tracking.
+- Because future game patches can alter entity definitions or network packet layouts, replays from unadapted newer versions may require an update before parsing cleanly.
 
-The following results use the same game 15.5 replay at `1920x1200 / 60 FPS / 15x / quality 8 / native`:
+When opening an [Issue](https://github.com/In-dor/minimap_renderer/issues), please include:
+1. Game client version and server region (ASIA / EU / NA / CN)
+2. The exact command executed and full traceback output
+3. A `.wowsreplay` file that reproduces the issue, if possible
 
-| Metric                         | Before optimization |   Current version |
-| ------------------------------ | ------------------: | ----------------: |
-| Normal battle-frame throughput |         `55.85 FPS` |      `118.89 FPS` |
-| Full command time              |           `50.18 s` |         `24.17 s` |
-| Relative speed                 |             `1.00x` | **about `2.08x`** |
+---
 
-Actual performance depends on CPU speed, memory bandwidth, replay length, battle complexity, and background load. The current pipeline overlaps independent stages while preserving strict ordering for stateful battle layers.
+## Development & Testing
 
-## Compatibility
-
-The renderer contains version-specific adapters for multiple game releases and is **currently maintained up to version `15.10.0`**, with backward compatibility for earlier replays and support for Operation mode consumables. New game versions may change the replay format, so versions that have not been adapted yet are not guaranteed to parse or render completely.
-
-When reporting an [issue](https://github.com/In-dor/minimap_renderer/issues), include:
-
-- Game version and server region
-- Complete error output
-- The exact command used
-- A replay that reproduces the problem, when possible
-
-## Development Setup
+Clone the repository and install in editable mode with testing extras (core package sources live under `src/`):
 
 ```bash
 git clone https://github.com/In-dor/minimap_renderer.git
 cd minimap_renderer
-python -m venv .venv
+python3.10 -m venv .venv
 ```
 
 Windows:
@@ -237,12 +288,14 @@ pip install -e ".[testing]"
 pytest
 ```
 
-## History and Credits
+---
 
-This repository is a maintained fork of the archived [WoWs-Builder-Team/minimap_renderer](https://github.com/WoWs-Builder-Team/minimap_renderer). It continues game-version support, bug fixes, rendering-quality improvements, and performance work.
+## History & Credits
 
-Thanks to the original maintainers `notyourfather`, `Trackpad`, and all previous contributors. Replay parsing also builds on Monstrofil's [replays_unpack](https://github.com/Monstrofil/replays_unpack).
+This repository is an actively maintained fork of the archived [WoWs-Builder-Team/minimap_renderer](https://github.com/WoWs-Builder-Team/minimap_renderer), extending it with ongoing game-version support, native high-resolution temporal interpolation, the redesigned tactical HUD, and the 2.4K post-battle review infographic engine.
+
+Special thanks to the original maintainers `notyourfather`, `Trackpad`, and all community contributors, as well as Monstrofil's [replays_unpack](https://github.com/Monstrofil/replays_unpack) for laying the foundation for World of Warships replay unpacking.
 
 ## License
 
-This project is distributed under the [GNU Affero General Public License v3.0](LICENSE).
+Distributed under the [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE).

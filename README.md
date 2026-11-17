@@ -2,41 +2,75 @@
 
 # Minimap Renderer
 
-**将《战舰世界》回放转换为清晰、流畅的小地图战斗视频**
+**将《战舰世界》回放转化为 1920×1200 原生 60 FPS 小地图战术视频与 2.4K 超高清全景复盘战报**
 
 [English](README_EN.md) · [问题反馈](https://github.com/In-dor/minimap_renderer/issues) · [原始项目](https://github.com/WoWs-Builder-Team/minimap_renderer)
 
 [![Tests](https://github.com/In-dor/minimap_renderer/actions/workflows/tests.yml/badge.svg)](https://github.com/In-dor/minimap_renderer/actions/workflows/tests.yml)
-[![Python 3.10](https://img.shields.io/badge/Python-3.10-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Game Version](https://img.shields.io/badge/WoWS-≤%2015.10.0-00B4D8)](https://github.com/In-dor/minimap_renderer)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-2E7D32.svg)](LICENSE)
 [![Maintained](https://img.shields.io/badge/状态-持续维护-00A86B.svg)](https://github.com/In-dor/minimap_renderer)
 
-![Minimap Renderer 演示](images/minimap.gif)
+<img src="images/minimap.gif" alt="Minimap Renderer 战术小地图视频演示" width="920">
 
 </div>
 
 > [!IMPORTANT]
-> [WoWs-Builder-Team/minimap_renderer](https://github.com/WoWs-Builder-Team/minimap_renderer) 已归档，不再维护。当前持续维护的版本是 **[In-dor/minimap_renderer](https://github.com/In-dor/minimap_renderer)**。请在本仓库安装、提交问题和获取更新。
+> 原仓库 [WoWs-Builder-Team/minimap_renderer](https://github.com/WoWs-Builder-Team/minimap_renderer) 已归档停更。当前持续维护、适配最新客户端版本并包含新版战术 HUD 与 2.4K 战报引擎的分支为 **[In-dor/minimap_renderer](https://github.com/In-dor/minimap_renderer)**，请在本仓库安装、更新与提交反馈。
 
-## 功能亮点
+`Minimap Renderer` 是一款面向《战舰世界》（World of Warships）`.wowsreplay` 回放文件的战术可视化与战局复盘工具。只需一次解析，即可同步输出 **流畅无重影的 60 FPS 小地图延时视频**、**对齐官方结算真值的 2.4K 全景复盘战报长图** 以及 **友方舰船配装导出文件**，同时支持赛事级双阵营上帝视角合流渲染。
 
-- **原生高分辨率绘制**：直接在 `1920x1200` 目标画布上渲染，不依赖后期放大，文字和图标更加清晰。
-- **原生时间插值**：对舰船位置、航向、飞机、炮弹和鱼雷生成中间状态，默认输出流畅的 `60 FPS` 视频。
-- **完整战斗信息**：显示舰船、血量、消耗品、占领点、比分、伤害、勋带、击杀、聊天和战斗结果。
-- **高效渲染流水线**：引入帧缓冲内存池复用、舰船旋转与状态 LRU 缓存、紧凑包围盒快速 Alpha 合成，并并行执行绘制、帧序列化与 FFmpeg 硬件编码。
-- **兼容多种补帧方式**：除推荐的 `native` 外，仍可使用 `blend`、`duplicate` 和 `motion`。
-- **自动导出配置信息**：渲染视频时同时生成玩家配装链接 JSON 文件。
-- **2.4K 战报全景长图**：默认在渲染视频时同步生成对齐 WG 战后结算的 2.4K 超高清战绩战报长图（包含基础经验与原始裸经验双列对照、战舰击沉与防空战机击落、完整局内通讯记录、车队组队联动标识及主炮弹药明细）。
+---
 
-## 快速开始
+## 核心特性
+
+### 1. 小地图战术视频与现代化 HUD（`*.mp4`）
+
+- **原生 `1920×1200`（`8:5`）矢量级高清绘制**：直接在目标分辨率画布上按比例缩放海图、字体与图标，摒弃低清画布后期拉伸，文字边缘与舰种轮廓清晰锐利。
+- **原生状态时间插值（`native` 60 FPS）**：在渲染器内部对舰船位置、航向角、舰载机、炮弹与鱼雷生成连续中间状态，彻底消除传统帧混合带来的拖影与重影。
+- **现代化深海战术 HUD 布局**：
+  - **顶栏全局态势条**：集成双方实时比分进度条、胜负预测倒计时、居中战斗时钟，以及**双方存活/阵亡舰种剪影阵容对比条**。
+  - **右侧三段式半透明战术卡片**：
+    - **对局元信息卡**：显示地图名称、对局与占领模式徽章、客户端版本号，以及录制者 `[军团]` 昵称与等级舰名。
+    - **舰体状态与战果卡**：配备暗底槽与灰白可回复血段（维修小组）的动态变色血条、起火/进水部位图标、实时造成伤害 / 潜在承伤 / 协助点亮计数，以及自动排布的战功丝带与成就勋章。
+    - **战况流与通讯卡**：上方滚动展示带击杀手段图标的实时击杀播报（Kill Feed），下方呈现带 `[MM:SS]` 战斗时间戳、军团原色标签与分队金色高亮的局内聊天流。
+- **高辨识度战场图层**：
+  - **精确 `10×10` 战术网格**与海图边框对齐；
+  - **水平防重叠舰名标签**：带深色描边衬底、自动碰撞避让与底部边界自动正向翻转（告别倒置舰名），实时叠加集火标记、雷达/水听激活图标与作用范围圈；
+  - **柔雾底 + 合并外轮廓虚线环烟幕**：采用 2× 超采样抗锯齿绘制，自动擦除烟团内部重叠弧线，仅保留干净的外围虚线边界；
+  - **高区分度弹道与鱼雷**：主副炮分层透明度，冷青白 `AP`（`#c8f4ff`）、琥珀橙 `HE` 与亮洋红 `SAP`（`#ff5cc8`）一目了然；常规鱼雷带深色衬底外圈，潜艇声导鱼雷额外附带亮青色声导外环（`#9ef6ff`）。
+- **多语种零乱码确定性选字**：基于确定性 Unicode 码位区间自动路由中 / 日 / 韩 / 西里尔 / 拉丁扩展字体，彻底解决多国服玩家同场时的方块字与乱码问题。
+- **高性能异步编码流水线**：结合 LIFO 帧缓冲内存池复用、区间静态底图缓存、LRU 图标旋转缓存与后台异步 FFmpeg 硬件编码线程，大幅压缩整场渲染耗时。
+
+### 2. 2.4K 超高清战后复盘全景战报（`*-report.png`）
+
+<div align="center">
+  <img src="images/battle_report.png" alt="2.4K 战后复盘全景战报预览" width="920">
+</div>
+
+- **单次解析零额外开销**：同时渲染视频与战报时直接复用内存解析结果，单次数据包流遍历即可同步提取 `Packet 0x22`（`playersPublicInfo`）官方结算真值与 `Avatar.receive_CommonCMD` 无线电指令，视频编码结束后约 **1 秒**即可生成战报；亦支持 `--report-only` 跳过视频、秒级独立出图。
+- **个人高光 Hero 面板**：展示舰船等级/舰种/系别、存活状态或击沉者、金色组队分队徽章、**按武器大类智能聚合的伤害明细**（主炮 / 副炮 / 鱼雷 / 声导雷 / 起火 / 进水 / 火箭弹 / 航弹 / 深弹 / 水雷 / 导弹 / 撞击）、击沉/防空击落/协助点亮/潜在承伤四维统计卡，以及自适应成就勋章栏、全量战功丝带网格与主炮命中明细（过穿/跳弹/碎弹/贯穿）。
+- **全模式自适应双阵营记分板**：动态适配对决、排位（6v6 / 7v7）、军团战、随机战（12v12）乃至行动模式（70+ 波次增援 AI 舰船自动伸缩并双侧等高对齐）；完整呈现**着色官方舰种剪影图标**、组队徽章与专属高亮、**全场最高伤害归一化渐变占比条（Data Bar）**、造成伤害、**协助点亮**、承受伤害、潜在伤害、基础经验（胜方含 1.5× 加成标注 `*`）与当局勋章角标；全字段支持像素级省略截断，杜绝长昵称溢出重叠。
+- **内嵌 `760×760` 静态战术航迹小地图**：融合高清海图、终局占领区归属圈、全队推进幽灵线（敌舰灭点或跨度跳变时自动断段防止穿山连线）、录制者时间渐变高光航迹（冰蓝 → 亮青 → 金黄，标注 `START` 起点与终局锚点）以及防碰撞 `[MM:SS] 舰名` 击沉标记（本人亲手击沉专属高亮）。
+- **双方总血量优劣势曲线 & 自适应双栏通讯面板**：右上方绘制全队实时总血量百分比差值包络线与击杀拐点；右下方按时间交错呈现全局/团队/分队文字聊天与原生解码的**战术无线电快捷指令**（注意扇区坐标、优先集火目标、请求支援、占领/防守点位、监视雷达/对海搜索/潜艇监视设备播报等），支持双行自动折行。
+
+### 3. 配装导出与赛事双视角合流
+
+- **玩家配装自动导出（`*-builds.json`）**：渲染视频时自动提取友方玩家舰船配件、消耗品与舰长技能，生成可直接跳转查看的 [WoWs ShipBuilder](https://app.wowssb.com/) 配装链接。
+- **双阵营上帝视角合流（`RenderDual`）**：支持将同一场战斗红绿双方的两份回放合流渲染为无战争迷雾的赛事复盘视频。
+
+---
+
+## 快速安装
 
 ### 环境要求
 
-- Python `3.10`
+- Python `3.10` 或更高版本（推荐 `3.10`）
 - Windows 或 Linux
 - 有效的《战舰世界》`.wowsreplay` 回放文件
 
-项目通过 `imageio-ffmpeg` 提供视频编码能力，正常安装后通常不需要单独配置 FFmpeg。
+项目通过 `imageio-ffmpeg` 内置提供 FFmpeg 视频编码可执行文件，常规安装后开箱即用，无需手动配置系统 `PATH`。
 
 ### Windows
 
@@ -56,12 +90,14 @@ python -m pip install --upgrade pip
 pip install --upgrade --force-reinstall git+https://github.com/In-dor/minimap_renderer.git
 ```
 
-## 使用方法
+---
 
-使用默认配置渲染一场回放：
+## 快速上手
+
+使用默认推荐配置渲染一场回放（同时输出视频、配装 JSON 与 2.4K 战报）：
 
 ```bash
-python -m render --replay "路径/到/回放文件.wowsreplay"
+python -m render --replay "path/to/battle.wowsreplay"
 ```
 
 Windows 示例：
@@ -70,21 +106,31 @@ Windows 示例：
 python -m render --replay "F:\Replays\20260713_165525_PRSB510-Slava_54_Faroe.wowsreplay"
 ```
 
-默认配置为 `1920x1200`、`60 FPS`、`15x` 速度、质量 `8` 和原生插值。生成文件位于回放文件旁边：
+默认参数为 `1920x1200` 分辨率、`60 FPS`、`15x` 播放倍速、画质 `8`、`native` 原生插值与 `auto` 硬件加速编码。输出文件保存在回放同级目录下：
 
 ```text
-回放文件.mp4
-回放文件-builds.json
-回放文件-report.png
+battle.mp4            # 1920x1200 60 FPS 小地图战术延时视频
+battle-builds.json    # 友方玩家 WoWs ShipBuilder 配装链接
+battle-report.png     # 2.4K 超高清战后复盘全景战报长图
 ```
 
-查看完整命令帮助：
+### 仅生成 2.4K 战报长图（秒级出图）
+
+如果只需快速复盘战绩或生成战报图片分享，无需等待视频逐帧编码，可使用 `--report-only`：
 
 ```bash
-python -m render --help
+python -m render --replay "battle.wowsreplay" --report-only
 ```
 
-## 命令参数
+在源码仓库目录下，也可以直接运行独立工具脚本（支持 `-o` 指定输出路径）：
+
+```bash
+python tools/generate_battle_report.py "battle.wowsreplay" -o "custom_report.png"
+```
+
+---
+
+## 命令行参数详解
 
 ```text
 python -m render --replay REPLAY
@@ -100,48 +146,23 @@ python -m render --replay REPLAY
                  [--report-path REPORT_PATH]
 ```
 
-| 参数              |      默认值 | 说明                                                                                        |
-| ----------------- | ----------: | ------------------------------------------------------------------------------------------- |
-| `--replay`        |        必填 | `.wowsreplay` 文件路径                                                                      |
-| `--fps`           |        `60` | 输出视频帧率；数值越高越流畅，渲染帧数也越多                                                |
-| `--speed`         |        `15` | 延时播放倍速；例如 `15` 表示约 15 倍速                                                      |
-| `--resolution`    | `1920x1200` | 原生渲染分辨率，必须保持 `1360:850`（即 `8:5`）布局比例                                     |
-| `--quality`       |         `8` | 编码质量，范围 `1-10`；数值越高，画质和文件体积通常越高                                     |
-| `--interpolation` |    `native` | 帧生成方式，见下表                                                                          |
-| `--codec`         |      `h264` | 视频编码格式：兼容性较好的 `h264`、压缩率更高的 `h265` 或 `av1`                             |
-| `--encoder`       |      `auto` | 自动实测并使用可用的硬件编码器，均不可用时回退 CPU；也可指定 `cpu`、`nvenc`、`qsv`、`vaapi` 或 `amf` |
-| `--no-report`     |     `False` | 禁用自动生成 2.4K 战报长图                                                                  |
-| `--report-only`   |     `False` | 仅生成 2.4K 战报长图（跳过小地图视频逐帧渲染，秒级出图）                                   |
-| `--report-path`   |      `None` | 自定义战报长图输出路径（默认保存在回放同级目录下 `*-report.png`）                           |
+| 参数              |      默认值 | 说明                                                                                                 |
+| ----------------- | ----------: | ---------------------------------------------------------------------------------------------------- |
+| `--replay`        |        必填 | `.wowsreplay` 回放文件路径                                                                           |
+| `--fps`           |        `60` | 输出视频帧率（必须大于 `0`；`native` 模式下需满足 `--fps >= --speed`）                               |
+| `--speed`         |        `15` | 延时播放倍速（例如 `15` 代表约 15 倍速浓缩整场战斗）                                                 |
+| `--resolution`    | `1920x1200` | 原生渲染分辨率，宽高须为正偶数且保持 `1360:850`（即 `8:5`）画布比例                                  |
+| `--quality`       |         `8` | 编码质量（`1-10`）；针对扁平战术 UI 校准量化曲线，`8` 对应约 CRF/CQ `20`，兼顾锐利文字与合理体积     |
+| `--interpolation` |    `native` | 帧插值模式：`native`（推荐）、`blend`、`motion`、`duplicate`                                         |
+| `--codec`         |      `h264` | 视频编码格式：`h264`（兼容性最佳）、`h265`（高压缩率）或 `av1`                                       |
+| `--encoder`       |      `auto` | 硬件/软件编码后端：`auto` 自动实测可用硬件编码器并回退 CPU，也可显式指定 `cpu`/`nvenc`/`qsv`/`vaapi`/`amf` |
+| `--no-report`     |     `False` | 渲染视频后跳过自动生成 2.4K 战报长图                                                                 |
+| `--report-only`   |     `False` | 仅生成 2.4K 战报长图，跳过小地图视频与配装 JSON 导出                                                 |
+| `--report-path`   |      `None` | 自定义战报长图保存路径（默认输出到回放同目录 `<回放文件名>-report.png`）                             |
 
-### 视频编码器
+### 常用预设示例
 
-`--codec` 决定视频格式，`--encoder` 决定使用 CPU 或哪一种硬件后端。`auto` 会针对所选格式依次实际测试 NVIDIA NVENC、Intel Quick Sync、Linux VAAPI 和 AMD AMF，而不是只检查 FFmpeg 是否列出了编码器。硬件或驱动不可用时会自动回退对应的 CPU 编码器，并在日志中显示最终选择。
-
-| 格式   | CPU 回退     | 特点                                           |
-| ------ | ------------ | ---------------------------------------------- |
-| `h264` | `libx264`    | 播放器和网页兼容性最好，默认推荐               |
-| `h265` | `libx265`    | 同等画质下文件通常更小，但部分浏览器不支持     |
-| `av1`  | `libaom-av1` | 压缩效率较高；CPU 编码很慢，需要较新的播放环境 |
-
-显式指定 `--encoder qsv` 或 `--encoder vaapi` 时，如果该格式的编码器无法初始化，程序会直接报错，不会静默改用其他设备。Intel Linux NAS 建议保留 `--encoder auto`：QSV 初始化失败后会继续测试 VAAPI，最后才回退 CPU。
-
-Docker 或 LXC 环境需要映射 `/dev/dri/renderD128`、授予容器进程 `render` 组权限，并安装 Intel 媒体驱动。默认 VAAPI 设备是 `/dev/dri/renderD128`，可通过 `VAAPI_DEVICE` 修改。若 imageio 捆绑的 FFmpeg 不含 VAAPI，请设置 `IMAGEIO_FFMPEG_EXE=/usr/bin/ffmpeg` 使用容器内的系统 FFmpeg。硬件编码主要降低编码阶段的 CPU 占用，Python/Pillow 图层绘制仍由 CPU 完成。
-
-### 插值模式
-
-| 模式        | 特点                                                 | 建议用途       |
-| ----------- | ---------------------------------------------------- | -------------- |
-| `native`    | 在渲染器中计算物体中间状态；移动清晰，无整帧混合重影 | **默认推荐**   |
-| `blend`     | FFmpeg 混合相邻帧；速度较快，但移动物体可能出现重影  | 兼容旧输出风格 |
-| `duplicate` | 复制源帧达到目标帧率；最快，但运动不够连贯           | 更看重速度时   |
-| `motion`    | FFmpeg 运动补偿；计算成本很高，复杂场景可能产生伪影  | 实验性用途     |
-
-`native` 模式要求 `--fps` 不低于 `--speed`。例如 `--fps 60 --speed 15` 每个源时间间隔通常会生成约四个输出帧。
-
-## 推荐配置
-
-平衡清晰度、流畅度和速度：
+兼顾高画质、丝滑运动与硬件加速（默认推荐）：
 
 ```bash
 python -m render --replay "battle.wowsreplay" \
@@ -154,7 +175,7 @@ python -m render --replay "battle.wowsreplay" \
   --encoder auto
 ```
 
-更快、更小的输出：
+追求更小文件体积与更快出片速度：
 
 ```bash
 python -m render --replay "battle.wowsreplay" \
@@ -167,58 +188,88 @@ python -m render --replay "battle.wowsreplay" \
   --encoder auto
 ```
 
-## 战报长图生成
+---
 
-渲染器默认在输出视频时自动生成一份 2.4K 超高清战报长图（`*-report.png`）。
+## 视频编码器与插值模式
 
-如果只需要快速复盘战绩或导出图片分享，无需花费时间渲染完整的小地图延时视频，可以使用 `--report-only` 参数：
+### 视频编码器（`--codec` 与 `--encoder`）
 
-```bash
-python -m render --replay "battle.wowsreplay" --report-only
+`--codec` 决定视频编码标准，`--encoder` 决定调用的硬件后端或 CPU 编码器。在默认的 `--encoder auto` 模式下，程序会向 FFmpeg 发送一帧真实测试画面，按 **NVIDIA NVENC → Intel Quick Sync (QSV) → Linux VAAPI → AMD AMF** 的顺序实测硬件初始化能力，而非仅检查编码器列表；若当前环境无可用 GPU 驱动，则自动回退至对应的 CPU 编码器并在日志中打印最终选择。
+
+| 编码格式 | NVIDIA (`nvenc`) | Intel (`qsv`) | Linux (`vaapi`) | AMD (`amf`) | CPU 回退 (`cpu`) | 特点与适用场景                                   |
+| -------- | ---------------- | ------------- | --------------- | ----------- | ---------------- | ------------------------------------------------ |
+| `h264`   | `h264_nvenc`     | `h264_qsv`    | `h264_vaapi`    | `h264_amf`  | `libx264`        | 浏览器、社交平台与播放器兼容性最好，**默认推荐** |
+| `h265`   | `hevc_nvenc`     | `hevc_qsv`    | `hevc_vaapi`    | `hevc_amf`  | `libx265`        | 同等画质下体积更小（带 `hvc1` 标签）             |
+| `av1`    | `av1_nvenc`      | `av1_qsv`     | `av1_vaapi`     | `av1_amf`   | `libaom-av1`     | 压缩率最高；CPU 编码较慢，适合新一代显卡硬件编码 |
+
+> [!TIP]
+> **Docker / LXC / Linux NAS 硬件加速提示**：
+> - 显式指定 `--encoder qsv` 或 `--encoder vaapi` 时，若硬件初始化失败会直接报错而不会静默切换设备；Intel Linux NAS 环境建议保持 `--encoder auto`（QSV 不可用时会自动尝试 VAAPI，最后回退 CPU）。
+> - 容器环境使用 VAAPI 需挂载 `/dev/dri/renderD128`、为进程赋予 `render` 组权限并安装对应的媒体驱动。可通过环境变量 `VAAPI_DEVICE` 自定义设备路径（默认 `/dev/dri/renderD128`）。
+> - 若 `imageio-ffmpeg` 自带的二进制未编译 VAAPI 支持，可设置环境变量 `IMAGEIO_FFMPEG_EXE=/usr/bin/ffmpeg` 指向系统安装的 FFmpeg。
+
+### 帧插值模式（`--interpolation`）
+
+| 模式        | 工作原理                                                         | 推荐用途       |
+| ----------- | ---------------------------------------------------------------- | -------------- |
+| `native`    | 在渲染引擎内对舰船坐标、航向、飞机、炮弹与鱼雷做物理状态时间插值 | **默认推荐**   |
+| `blend`     | 通过 FFmpeg `framerate` 滤镜混合相邻源帧；速度快但移动目标有重影 | 兼容旧版风格   |
+| `duplicate` | 直接复制源帧匹配目标帧率；开销最低，但高速倍速下运动不够连贯     | 极限追求速度   |
+| `motion`    | 调用 FFmpeg `minterpolate` 双向运动补偿；CPU 开销极大且易生伪影  | 仅限实验性测试 |
+
+---
+
+## 双阵营上帝视角合流（`RenderDual`）
+
+针对军团战、锦标赛或训练房复盘，如果同时拥有同一场对局（相同 `game_arena_id` 与客户端版本）双方阵营各一名玩家的回放文件，可通过 `RenderDual` 合流渲染同时展现双方真实视野、弹道与鱼雷的全局复盘视频（参考仓库根目录 [`render_dual.py`](render_dual.py)）：
+
+```python
+from replay_parser import ReplayParser
+from renderer.render import RenderDual
+
+with open("team_alpha.wowsreplay", "rb") as f1, open("team_bravo.wowsreplay", "rb") as f2:
+    alpha_data = ReplayParser(f1, strict=True).get_info()["hidden"]["replay_data"]
+    bravo_data = ReplayParser(f2, strict=True).get_info()["hidden"]["replay_data"]
+
+    RenderDual(
+        alpha_data,
+        bravo_data,
+        green_tag="Alpha",
+        red_tag="Bravo",
+    ).start(
+        "minimap_dual.mp4",
+        fps=30,
+        speed=15,
+        resolution=(1920, 1200),
+        interpolation="blend",
+    )
 ```
 
-也可以直接调用独立的快捷工具脚本：
+> 注：`RenderDual` 需对齐双端整数事件时间轴，不支持 `native` 插值模式，建议使用 `blend` 或 `duplicate`。
 
-```bash
-python tools/generate_battle_report.py "battle.wowsreplay"
-```
+---
 
-战报内容亮点：
-- **官方真值结算**：自动从回放协议末尾的 WG 战后结算包（Packet 0x22）直接提取全场 24 人的官方真值造成伤害、点亮伤害与潜在伤害。
-- **双经验列呈现**：同时展示含 1.5x 胜利加成后的【基础经验】（与游戏内记分榜 1:1 对齐并作为排序依据）以及未乘算系数的【原始裸经验】。
-- **防空与击沉双标**：独立呈现全场战舰击沉与击落战机数量。
-- **全量局内通讯**：完整呈现整场文字聊天，根据频道与发言人阵营智能着色（分队金黄、友方薄荷绿、敌方浅珊瑚红）。
-- **组队联动标识**：精准还原车队分队编号徽章与队友专属视觉高亮。
+## 版本兼容性与问题反馈
 
-## 性能参考
+- **支持最新版本**：当前已持续跟进并完整支持至《战舰世界》**`15.10.0`** 版本。
+- **广泛历史回放兼容**：内置覆盖 **`0.11.6` ~ `15.10.0`** 的多版本解析定义与 40+ 个高分缩放适配图层，并兼容随机战、排位战、军团战、对决、联合人机、飞艇护航、军备竞赛及行动模式（Operations）等特殊对局与专属消耗品。对于缺少 `Packet 0x22` 结算包的早期历史回放（如 `0.11.x` ~ `12.5`）或中途退出的未完结回放，战报生成器会自动启用流式伤害与击杀补偿推算布局。
+- 由于新游戏版本更新可能调整底层网络实体协议，尚未适配的未来版本回放可能无法立即解析。
 
-以下数据来自同一场 15.5 版本回放，配置为 `1920x1200 / 60 FPS / 15x / quality 8 / native`：
+如遇解析报错或显示异常，欢迎提交 [Issue](https://github.com/In-dor/minimap_renderer/issues) 并附上：
+1. 游戏客户端版本号与服务器区域（如亚服 / 欧服 / 美服 / 国服）
+2. 实际执行的命令行参数与完整错误堆栈日志
+3. 可用于复现问题的 `.wowsreplay` 回放文件（如方便提供）
 
-| 项目           |      优化前 |       当前版本 |
-| -------------- | ----------: | -------------: |
-| 正常战斗帧吞吐 | `55.85 FPS` |   `118.89 FPS` |
-| 完整命令耗时   |  `50.18 秒` |     `24.17 秒` |
-| 相对速度       |     `1.00x` | **约 `2.08x`** |
+---
 
-实际速度取决于 CPU、内存带宽、回放长度、战斗复杂度和后台负载。当前流水线主要利用多个阶段并行工作，而有状态的战斗图层仍按时间顺序绘制，以保证结果正确。
+## 源码开发与测试
 
-## 兼容性说明
-
-渲染器包含针对多个游戏版本的适配图层，目前**已持续跟进适配至最新的 `15.10.0` 版本**，并向下兼容历史版本回放以及行动模式等特殊对局类型消耗品。新游戏版本发布时可能会修改回放数据结构，因此无法保证尚未适配的版本能够立即解析或完整显示。
-
-遇到问题时，请提交 [Issue](https://github.com/In-dor/minimap_renderer/issues)，并附上：
-
-- 游戏版本和服务器区域
-- 完整错误日志
-- 实际使用的命令
-- 可用于复现问题的回放文件（如方便提供）
-
-## 从源码开发
+克隆仓库并在虚拟环境中以可编辑模式安装开发测试依赖（注意仓库根目录源码位于 `src/` 下）：
 
 ```bash
 git clone https://github.com/In-dor/minimap_renderer.git
 cd minimap_renderer
-python -m venv .venv
+python3.10 -m venv .venv
 ```
 
 Windows：
@@ -237,12 +288,14 @@ pip install -e ".[testing]"
 pytest
 ```
 
+---
+
 ## 项目沿革与致谢
 
-本仓库复刻自已归档的 [WoWs-Builder-Team/minimap_renderer](https://github.com/WoWs-Builder-Team/minimap_renderer)，并在其基础上继续适配游戏版本、修复问题和改进渲染质量与性能。
+本仓库复刻并演进自已归档的 [WoWs-Builder-Team/minimap_renderer](https://github.com/WoWs-Builder-Team/minimap_renderer)，在此基础上持续跟进新版客户端协议适配，重构了原生高分辨率时间插值流水线、深海战术 HUD 界面以及 2.4K 全景复盘战报系统。
 
-感谢原项目维护者 `notyourfather`、`Trackpad` 及所有历史贡献者。回放解析相关工作也离不开 Monstrofil 的 [replays_unpack](https://github.com/Monstrofil/replays_unpack)。
+衷心感谢原项目维护者 `notyourfather`、`Trackpad` 及历代社区贡献者，同时感谢 Monstrofil 开发的 [replays_unpack](https://github.com/Monstrofil/replays_unpack) 为回放数据包解包奠定的坚实基础。
 
 ## 许可证
 
-本项目基于 [GNU Affero General Public License v3.0](LICENSE) 发布。
+本项目基于 [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE) 开源发布。
